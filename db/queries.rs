@@ -524,6 +524,133 @@ impl DbQueries {
         })
     }
 
+    pub fn get_random_custom_passage(
+        db: &DatabaseConnection,
+    ) -> Result<Option<DbPassage>> {
+        db.with_conn(|conn| {
+            // 1. Check custom passages table (is_custom = 1)
+            let mut stmt = conn.prepare(
+                "SELECT id, text_content, word_count, category, is_custom, created_at
+                 FROM passages
+                 WHERE is_custom = 1
+                 ORDER BY RANDOM() LIMIT 1",
+            )?;
+
+            let custom_passage = stmt
+                .query_row([], |row| {
+                    Ok(DbPassage {
+                        id: row.get(0)?,
+                        text_content: row.get(1)?,
+                        word_count: row.get(2)?,
+                        category: row.get(3)?,
+                        is_custom: row.get::<_, i64>(4)? != 0,
+                        created_at: row.get(5)?,
+                    })
+                })
+                .optional()?;
+
+            if custom_passage.is_some() {
+                return Ok(custom_passage);
+            }
+
+            // 2. Fallback: check custom texts in texts table (source != 'seed')
+            let mut text_stmt = conn.prepare(
+                "SELECT id, title, content, char_count, source, created_by, created_at
+                 FROM texts
+                 WHERE source != 'seed'
+                 ORDER BY RANDOM() LIMIT 1",
+            )?;
+
+            let custom_text = text_stmt
+                .query_row([], |row| {
+                    let content: String = row.get(2)?;
+                    let words = content.split_whitespace().count() as i64;
+                    let title: String = row.get(1)?;
+                    Ok(DbPassage {
+                        id: row.get(0)?,
+                        text_content: content,
+                        word_count: words,
+                        category: title,
+                        is_custom: true,
+                        created_at: row.get(6)?,
+                    })
+                })
+                .optional()?;
+
+            Ok(custom_text)
+        })
+    }
+
+    pub fn get_all_passages_palette(
+        db: &DatabaseConnection,
+        limit: usize,
+    ) -> Result<Vec<DbPassage>> {
+        db.with_conn(|conn| {
+            let mut list = Vec::new();
+            let mut seen_texts = std::collections::HashSet::new();
+
+            let mut stmt = conn.prepare(
+                "SELECT id, text_content, word_count, category, is_custom, created_at
+                 FROM passages
+                 ORDER BY is_custom DESC, id DESC LIMIT ?1",
+            )?;
+
+            let rows = stmt.query_map(params![limit as i64], |row| {
+                Ok(DbPassage {
+                    id: row.get(0)?,
+                    text_content: row.get(1)?,
+                    word_count: row.get(2)?,
+                    category: row.get(3)?,
+                    is_custom: row.get::<_, i64>(4)? != 0,
+                    created_at: row.get(5)?,
+                })
+            })?;
+
+            for r in rows {
+                if let Ok(p) = r {
+                    seen_texts.insert(p.text_content.clone());
+                    list.push(p);
+                }
+            }
+
+            // Also include custom texts from texts table
+            let mut text_stmt = conn.prepare(
+                "SELECT id, title, content, char_count, source, created_by, created_at
+                 FROM texts
+                 ORDER BY CASE WHEN source != 'seed' THEN 0 ELSE 1 END, id DESC
+                 LIMIT ?1",
+            )?;
+
+            let text_rows = text_stmt.query_map(params![limit as i64], |row| {
+                let id: i64 = row.get(0)?;
+                let title: String = row.get(1)?;
+                let content: String = row.get(2)?;
+                let source: String = row.get(4)?;
+                let created_at: i64 = row.get(6)?;
+                let word_count = content.split_whitespace().count() as i64;
+                Ok(DbPassage {
+                    id: -id,
+                    text_content: content,
+                    word_count,
+                    category: title,
+                    is_custom: source != "seed",
+                    created_at,
+                })
+            })?;
+
+            for r in text_rows {
+                if let Ok(p) = r {
+                    if !seen_texts.contains(&p.text_content) {
+                        seen_texts.insert(p.text_content.clone());
+                        list.push(p);
+                    }
+                }
+            }
+
+            Ok(list)
+        })
+    }
+
     pub fn get_custom_passages(
         db: &DatabaseConnection,
         limit: usize,
@@ -559,21 +686,29 @@ impl DbQueries {
         db: &DatabaseConnection,
         query: &str,
     ) -> Result<Vec<DbPassage>> {
-        let escaped = escape_fts5_query(query);
-        if escaped.is_empty() {
-            return Self::get_custom_passages(db, 20);
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return Self::get_all_passages_palette(db, 50);
         }
 
         db.with_conn(|conn| {
+            let pattern = format!("%{}%", trimmed.to_lowercase());
+            let mut list = Vec::new();
+            let mut seen_texts = std::collections::HashSet::new();
+
+            // 1. Search passages table (matching title/category OR content)
             let mut stmt = conn.prepare(
-                "SELECT p.id, p.text_content, p.word_count, p.category, p.is_custom, p.created_at
-                 FROM passages p
-                 JOIN passages_fts f ON f.rowid = p.id
-                 WHERE passages_fts MATCH ?1
-                 ORDER BY rank LIMIT 20",
+                "SELECT id, text_content, word_count, category, is_custom, created_at
+                 FROM passages
+                 WHERE LOWER(category) LIKE ?1 OR LOWER(text_content) LIKE ?1
+                 ORDER BY
+                    CASE WHEN LOWER(category) LIKE ?1 THEN 0 ELSE 1 END,
+                    is_custom DESC,
+                    id DESC
+                 LIMIT 50",
             )?;
 
-            let rows = stmt.query_map(params![escaped], |row| {
+            let rows = stmt.query_map(params![pattern], |row| {
                 Ok(DbPassage {
                     id: row.get(0)?,
                     text_content: row.get(1)?,
@@ -584,19 +719,100 @@ impl DbQueries {
                 })
             })?;
 
-            let mut list = Vec::new();
             for r in rows {
-                list.push(r?);
+                if let Ok(p) = r {
+                    seen_texts.insert(p.text_content.clone());
+                    list.push(p);
+                }
             }
+
+            // 2. Also search texts table (where custom texts are saved)
+            let mut text_stmt = conn.prepare(
+                "SELECT id, title, content, char_count, source, created_by, created_at
+                 FROM texts
+                 WHERE LOWER(title) LIKE ?1 OR LOWER(content) LIKE ?1
+                 ORDER BY
+                    CASE WHEN LOWER(title) LIKE ?1 THEN 0 ELSE 1 END,
+                    id DESC
+                 LIMIT 50",
+            )?;
+
+            let text_rows = text_stmt.query_map(params![pattern], |row| {
+                let id: i64 = row.get(0)?;
+                let title: String = row.get(1)?;
+                let content: String = row.get(2)?;
+                let source: String = row.get(4)?;
+                let created_at: i64 = row.get(6)?;
+                let word_count = content.split_whitespace().count() as i64;
+                Ok(DbPassage {
+                    id: -id,
+                    text_content: content,
+                    word_count,
+                    category: title,
+                    is_custom: source != "seed",
+                    created_at,
+                })
+            })?;
+
+            for r in text_rows {
+                if let Ok(p) = r {
+                    if !seen_texts.contains(&p.text_content) {
+                        seen_texts.insert(p.text_content.clone());
+                        list.push(p);
+                    }
+                }
+            }
+
             Ok(list)
+        })
+    }
+
+    pub fn update_passage(
+        db: &DatabaseConnection,
+        passage_id: i64,
+        text_content: &str,
+        category: &str,
+    ) -> Result<()> {
+        let word_count = text_content.split_whitespace().count() as i64;
+        db.with_conn(|conn| {
+            let tx = conn.transaction()?;
+            if passage_id > 0 {
+                tx.execute(
+                    "UPDATE passages SET text_content = ?1, word_count = ?2, category = ?3 WHERE id = ?4",
+                    params![text_content, word_count, category, passage_id],
+                )?;
+                let _ = tx.execute(
+                    "UPDATE passages_fts SET text_content = ?1, category = ?2 WHERE rowid = ?3",
+                    params![text_content, category, passage_id],
+                );
+            } else {
+                let text_id = -passage_id;
+                let char_count = text_content.chars().count() as i64;
+                tx.execute(
+                    "UPDATE texts SET title = ?1, content = ?2, char_count = ?3 WHERE id = ?4",
+                    params![category, text_content, char_count, text_id],
+                )?;
+                let _ = tx.execute(
+                    "UPDATE texts_fts SET title = ?1, content = ?2 WHERE rowid = ?3",
+                    params![category, text_content, text_id],
+                );
+            }
+            tx.commit()?;
+            Ok(())
         })
     }
 
     pub fn delete_passage(db: &DatabaseConnection, passage_id: i64) -> Result<()> {
         db.with_conn(|conn| {
             let tx = conn.transaction()?;
-            let _ = tx.execute("DELETE FROM passages_fts WHERE rowid = ?1", params![passage_id]);
-            tx.execute("DELETE FROM passages WHERE id = ?1", params![passage_id])?;
+            if passage_id > 0 {
+                let _ = tx.execute("DELETE FROM passages_fts WHERE rowid = ?1", params![passage_id]);
+                tx.execute("DELETE FROM passages WHERE id = ?1", params![passage_id])?;
+            } else {
+                let text_id = -passage_id;
+                let _ = tx.execute("DELETE FROM texts_fts WHERE rowid = ?1", params![text_id]);
+                tx.execute("DELETE FROM texts WHERE id = ?1", params![text_id])?;
+            }
             tx.commit()?;
             Ok(())
         })

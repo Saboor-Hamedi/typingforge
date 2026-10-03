@@ -269,11 +269,7 @@ impl HeaderWidget {
                     });
 
                     let resp = ui.interact(btn_rect, ui.id().with("hdr_close_settings"), egui::Sense::click());
-                    let btn_p = ui.painter_at(btn_rect);
-                    let bg_col = if resp.hovered() { Color32::from_white_alpha(16) } else { theme.bg_surface };
-                    btn_p.rect_filled(btn_rect, 4.0, bg_col);
-                    btn_p.rect_stroke(btn_rect, 4.0, Stroke::new(1.0, theme.border));
-                    btn_p.text(btn_rect.center(), egui::Align2::CENTER_CENTER, "← Back to Typing", egui::FontId::monospace(10.5), theme.text_dim);
+                    draw_back_to_typing_btn(&ui.painter_at(btn_rect), btn_rect, resp.hovered(), theme);
                     if resp.clicked_by(egui::PointerButton::Primary) {
                         *on_close_settings = true;
                     }
@@ -293,20 +289,13 @@ impl HeaderWidget {
                     });
 
                     let play_resp = ui.interact(play_rect, ui.id().with("hdr_play_again"), egui::Sense::click());
-                    let p_play = ui.painter_at(play_rect);
-                    let play_bg = if play_resp.hovered() { theme.accent.linear_multiply(0.85) } else { theme.accent };
-                    p_play.rect_filled(play_rect, 4.0, play_bg);
-                    p_play.text(play_rect.center(), egui::Align2::CENTER_CENTER, "▶ Play Again", egui::FontId::monospace(10.5), Color32::from_rgb(10, 14, 22));
+                    draw_play_again_btn(&ui.painter_at(play_rect), play_rect, play_resp.hovered(), theme);
                     if play_resp.clicked_by(egui::PointerButton::Primary) {
                         *on_play_again = true;
                     }
 
                     let back_resp = ui.interact(back_rect, ui.id().with("hdr_back_to_typing"), egui::Sense::click());
-                    let p_back = ui.painter_at(back_rect);
-                    let back_bg = if back_resp.hovered() { Color32::from_white_alpha(16) } else { theme.bg_surface };
-                    p_back.rect_filled(back_rect, 4.0, back_bg);
-                    p_back.rect_stroke(back_rect, 4.0, Stroke::new(1.0, theme.border));
-                    p_back.text(back_rect.center(), egui::Align2::CENTER_CENTER, "← Back to Typing", egui::FontId::monospace(10.5), theme.text_dim);
+                    draw_back_to_typing_btn(&ui.painter_at(back_rect), back_rect, back_resp.hovered(), theme);
                     if back_resp.clicked_by(egui::PointerButton::Primary) {
                         *on_play_again = true;
                     }
@@ -568,3 +557,50 @@ impl HeaderWidget {
         ui.allocate_exact_size(Vec2::new(total_w, Self::HEIGHT), egui::Sense::hover());
     }
 }
+
+fn draw_back_to_typing_btn(painter: &egui::Painter, rect: Rect, hovered: bool, theme: &Theme) {
+    let bg_col = if hovered { Color32::from_white_alpha(16) } else { theme.bg_surface };
+    let border_col = if hovered { theme.text_dim } else { theme.border };
+    let text_col = if hovered { theme.text_active } else { theme.text_dim };
+    let icon_col = if hovered { theme.accent } else { theme.text_dim };
+
+    painter.rect_filled(rect, 4.0, bg_col);
+    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, border_col));
+
+    let cy = rect.center().y;
+    // Crisp vector left arrow
+    let arrow_x = rect.min.x + 15.0;
+    painter.line_segment([Pos2::new(arrow_x - 4.5, cy), Pos2::new(arrow_x + 4.5, cy)], Stroke::new(1.3, icon_col));
+    painter.line_segment([Pos2::new(arrow_x - 4.5, cy), Pos2::new(arrow_x - 1.0, cy - 3.5)], Stroke::new(1.3, icon_col));
+    painter.line_segment([Pos2::new(arrow_x - 4.5, cy), Pos2::new(arrow_x - 1.0, cy + 3.5)], Stroke::new(1.3, icon_col));
+
+    painter.text(
+        Pos2::new(rect.min.x + 28.0, cy),
+        egui::Align2::LEFT_CENTER,
+        "Back to Typing",
+        egui::FontId::monospace(10.5),
+        text_col,
+    );
+}
+
+fn draw_play_again_btn(painter: &egui::Painter, rect: Rect, hovered: bool, theme: &Theme) {
+    let play_bg = if hovered { theme.accent.linear_multiply(0.85) } else { theme.accent };
+    painter.rect_filled(rect, 4.0, play_bg);
+    let cy = rect.center().y;
+    let play_col = Color32::from_rgb(10, 14, 22);
+
+    // Crisp vector play triangle
+    let tri_x = rect.min.x + 16.0;
+    painter.line_segment([Pos2::new(tri_x - 3.0, cy - 4.0), Pos2::new(tri_x + 4.0, cy)], Stroke::new(1.5, play_col));
+    painter.line_segment([Pos2::new(tri_x + 4.0, cy), Pos2::new(tri_x - 3.0, cy + 4.0)], Stroke::new(1.5, play_col));
+    painter.line_segment([Pos2::new(tri_x - 3.0, cy + 4.0), Pos2::new(tri_x - 3.0, cy - 4.0)], Stroke::new(1.5, play_col));
+
+    painter.text(
+        Pos2::new(rect.min.x + 27.0, cy),
+        egui::Align2::LEFT_CENTER,
+        "Play Again",
+        egui::FontId::monospace(10.5),
+        play_col,
+    );
+}
+

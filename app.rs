@@ -3,6 +3,8 @@ use crate::data::{AppConfig, ConfigLoader};
 use crate::db::{DatabaseConnection, DbKeystrokeLog, DbQueries, DbSession, PersonalBest, User};
 use crate::fx::{CaretController, ParticleSystem, ScreenShake};
 use crate::typing::{GameEngine, GameMode, GameState, SessionConfig};
+use crate::ui::fuzzy::{FuzzyPalette, PaletteAction};
+use crate::ui::panels::settings::setting_tab::SettingsTab;
 use crate::ui::panels::{EditorPanel, ResultsView, SettingsPanel, TypingView};
 use crate::ui::{HeaderScreen, HeaderWidget, Theme};
 use egui::{Color32, Key, Pos2, Rect, Stroke};
@@ -26,6 +28,7 @@ pub struct VelotypeApp {
     current_user: Option<User>,
     editor_panel: EditorPanel,
     settings_panel: SettingsPanel,
+    fuzzy_palette: FuzzyPalette,
     current_screen: AppScreen,
     last_frame_time: f64,
     is_personal_best: bool,
@@ -87,6 +90,7 @@ impl VelotypeApp {
             current_user,
             editor_panel: EditorPanel::new(),
             settings_panel: SettingsPanel::new(),
+            fuzzy_palette: FuzzyPalette::new(),
             current_screen: AppScreen::Typing,
             last_frame_time: 0.0,
             is_personal_best: false,
@@ -99,31 +103,39 @@ impl VelotypeApp {
     }
 
     fn restart_game(&mut self) {
-        let passage_text = match self.engine.config.mode {
-            GameMode::Words => {
-                let target = self.engine.config.word_target as usize;
-                DbQueries::get_random_passage_for_words(&self.db, target)
-                    .ok()
-                    .flatten()
-                    .map(|p| p.text_content)
-            }
-            GameMode::Timed => {
-                let target = self.engine.config.timed_duration as usize;
-                DbQueries::get_random_passage_for_words(&self.db, target)
-                    .ok()
-                    .flatten()
-                    .map(|p| p.text_content)
-                    .or_else(|| {
-                        DbQueries::get_random_passage(&self.db, None)
-                            .ok()
-                            .flatten()
-                            .map(|p| p.text_content)
-                    })
-            }
+        // Prioritize user's custom inserted passages from database if present
+        let custom_opt = DbQueries::get_random_custom_passage(&self.db).ok().flatten();
+
+        let (passage_text, is_custom) = if let Some(p) = custom_opt {
+            (Some(p.text_content), true)
+        } else {
+            let text = match self.engine.config.mode {
+                GameMode::Words => {
+                    let target = self.engine.config.word_target as usize;
+                    DbQueries::get_random_passage_for_words(&self.db, target)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.text_content)
+                }
+                GameMode::Timed => {
+                    let target = self.engine.config.timed_duration as usize;
+                    DbQueries::get_random_passage_for_words(&self.db, target)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.text_content)
+                        .or_else(|| {
+                            DbQueries::get_random_passage(&self.db, None)
+                                .ok()
+                                .flatten()
+                                .map(|p| p.text_content)
+                        })
+                }
+            };
+            (text, false)
         };
 
         if let Some(text) = passage_text {
-            self.engine.load_passage_text(&text, false);
+            self.engine.load_passage_text(&text, is_custom);
         } else {
             self.engine.reset();
         }
@@ -230,6 +242,22 @@ impl VelotypeApp {
     fn handle_keyboard_inputs(&mut self, ctx: &egui::Context) {
         let ctrl = ctx.input(|i| i.modifiers.ctrl || i.modifiers.mac_cmd);
         let comma_pressed = ctx.input(|i| i.key_pressed(Key::Comma));
+        let p_pressed = ctx.input(|i| i.key_pressed(Key::P));
+
+        // Ctrl + P (or Cmd + P) opens / toggles Fuzzy Command Palette!
+        if ctrl && p_pressed {
+            ctx.input_mut(|i| {
+                i.consume_key(egui::Modifiers::CTRL, Key::P);
+                i.consume_key(egui::Modifiers::COMMAND, Key::P);
+            });
+            self.fuzzy_palette.toggle(&self.db);
+            return;
+        }
+
+        // When Fuzzy Palette is active, suspend typing input to prevent leaking keystrokes
+        if self.fuzzy_palette.is_open {
+            return;
+        }
 
         // Ctrl + , (or Cmd + ,) opens Settings
         if ctrl && comma_pressed {
@@ -678,7 +706,7 @@ impl eframe::App for VelotypeApp {
                         AppScreen::Settings => format!("theme: {}  ·  esc return", theme.name),
                         AppScreen::Editor => "esc return  ·  enter apply".to_string(),
                         AppScreen::Results => format!("theme: {}  ·  tab+enter play again", theme.name),
-                        AppScreen::Typing => format!("theme: {}  ·  tab edit passage  ·  tab+enter restart", theme.name),
+                        AppScreen::Typing => format!("theme: {}  ·  ctrl+p palette  ·  tab restart", theme.name),
                     };
 
                     fp.text(
@@ -703,6 +731,25 @@ impl eframe::App for VelotypeApp {
                 });
             });
         });
+
+        // 4. macOS Spotlight-style Fuzzy Command Palette Modal
+        if let Some(action) = self.fuzzy_palette.show(ctx, &self.db, &theme) {
+            match action {
+                PaletteAction::SelectPassage(passage) => {
+                    self.engine.load_passage_text(&passage.text_content, passage.is_custom);
+                    self.caret.snap_to(Pos2::ZERO);
+                    self.current_screen = AppScreen::Typing;
+                    self.is_personal_best = false;
+                    self.pb_banner_timer = 0.0;
+                }
+                PaletteAction::EditPassage(passage) => {
+                    self.current_screen = AppScreen::Settings;
+                    self.settings_panel.current_tab = SettingsTab::CustomTexts;
+                    self.settings_panel.custom_texts_state.title_input = passage.category;
+                    self.settings_panel.custom_texts_state.content_input = passage.text_content;
+                }
+            }
+        }
 
         ctx.request_repaint();
     }

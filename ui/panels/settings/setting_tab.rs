@@ -45,14 +45,14 @@ impl SettingsTab {
         match self {
             SettingsTab::Profile => {
                 // User silhouette
-                painter.circle_stroke(Pos2::new(center.x, center.y - 3.2), 3.2, Stroke::new(1.3, color));
+                painter.circle_stroke(Pos2::new(center.x, center.y - 3.2), 3.0, Stroke::new(1.3, color));
                 let base_y = center.y + 5.0;
                 painter.line_segment([Pos2::new(center.x - 5.0, base_y), Pos2::new(center.x - 3.0, base_y - 2.5)], Stroke::new(1.3, color));
                 painter.line_segment([Pos2::new(center.x - 3.0, base_y - 2.5), Pos2::new(center.x + 3.0, base_y - 2.5)], Stroke::new(1.3, color));
                 painter.line_segment([Pos2::new(center.x + 3.0, base_y - 2.5), Pos2::new(center.x + 5.0, base_y)], Stroke::new(1.3, color));
             }
             SettingsTab::CustomTexts => {
-                // Document with horizontal lines
+                // Document with text lines
                 let doc = Rect::from_center_size(center, Vec2::new(10.0, 13.0));
                 painter.rect_stroke(doc, 1.5, Stroke::new(1.3, color));
                 painter.line_segment([Pos2::new(center.x - 2.5, center.y - 3.0), Pos2::new(center.x + 2.5, center.y - 3.0)], Stroke::new(1.0, color));
@@ -60,55 +60,65 @@ impl SettingsTab {
                 painter.line_segment([Pos2::new(center.x - 2.5, center.y + 3.0), Pos2::new(center.x + 1.0, center.y + 3.0)], Stroke::new(1.0, color));
             }
             SettingsTab::Themes => {
-                // Diamond palette icon with inner dot
-                painter.line_segment([Pos2::new(center.x, center.y - 5.5), Pos2::new(center.x + 5.5, center.y)], Stroke::new(1.3, color));
-                painter.line_segment([Pos2::new(center.x + 5.5, center.y), Pos2::new(center.x, center.y + 5.5)], Stroke::new(1.3, color));
-                painter.line_segment([Pos2::new(center.x, center.y + 5.5), Pos2::new(center.x - 5.5, center.y)], Stroke::new(1.3, color));
-                painter.line_segment([Pos2::new(center.x - 5.5, center.y), Pos2::new(center.x, center.y - 5.5)], Stroke::new(1.3, color));
-                painter.circle_filled(center, 1.8, color);
+                // Artist palette with paint spots
+                let pal = Rect::from_center_size(center, Vec2::new(13.0, 11.0));
+                painter.rect_stroke(pal, 5.0, Stroke::new(1.3, color));
+                painter.circle_filled(Pos2::new(center.x - 2.8, center.y - 2.0), 1.2, color);
+                painter.circle_filled(Pos2::new(center.x + 2.2, center.y - 2.0), 1.2, color);
+                painter.circle_filled(Pos2::new(center.x - 2.0, center.y + 2.0), 1.2, color);
+                painter.circle_stroke(Pos2::new(center.x + 3.0, center.y + 1.8), 1.2, Stroke::new(1.0, color));
             }
             SettingsTab::CaretPhysics => {
-                // I-beam caret cursor
-                painter.line_segment([Pos2::new(center.x, center.y - 6.0), Pos2::new(center.x, center.y + 6.0)], Stroke::new(2.0, color));
-                painter.line_segment([Pos2::new(center.x - 2.5, center.y - 6.0), Pos2::new(center.x + 2.5, center.y - 6.0)], Stroke::new(1.3, color));
-                painter.line_segment([Pos2::new(center.x - 2.5, center.y + 6.0), Pos2::new(center.x + 2.5, center.y + 6.0)], Stroke::new(1.3, color));
+                // Cursor arrow pointer
+                let tip = Pos2::new(center.x - 4.5, center.y - 5.5);
+                painter.line_segment([tip, Pos2::new(center.x - 4.5, center.y + 4.5)], Stroke::new(1.3, color));
+                painter.line_segment([tip, Pos2::new(center.x + 4.0, center.y + 0.5)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x - 4.5, center.y + 4.5), Pos2::new(center.x - 1.0, center.y + 2.0)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x + 4.0, center.y + 0.5), Pos2::new(center.x - 1.0, center.y + 2.0)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x - 1.0, center.y + 2.0), Pos2::new(center.x + 3.0, center.y + 6.0)], Stroke::new(1.5, color));
             }
             SettingsTab::Audio => {
-                // Equalizer sound waves
-                painter.line_segment([Pos2::new(center.x - 4.5, center.y - 2.5), Pos2::new(center.x - 4.5, center.y + 2.5)], Stroke::new(1.5, color));
-                painter.line_segment([Pos2::new(center.x - 1.5, center.y - 5.5), Pos2::new(center.x - 1.5, center.y + 5.5)], Stroke::new(1.5, color));
-                painter.line_segment([Pos2::new(center.x + 1.5, center.y - 3.5), Pos2::new(center.x + 1.5, center.y + 3.5)], Stroke::new(1.5, color));
-                painter.line_segment([Pos2::new(center.x + 4.5, center.y - 6.0), Pos2::new(center.x + 4.5, center.y + 6.0)], Stroke::new(1.5, color));
+                // Speaker with sound wave arcs
+                painter.rect_filled(Rect::from_min_max(Pos2::new(center.x - 5.5, center.y - 2.5), Pos2::new(center.x - 3.0, center.y + 2.5)), 0.5, color);
+                painter.line_segment([Pos2::new(center.x - 3.0, center.y - 2.5), Pos2::new(center.x, center.y - 5.0)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x, center.y - 5.0), Pos2::new(center.x, center.y + 5.0)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x, center.y + 5.0), Pos2::new(center.x - 3.0, center.y + 2.5)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x + 2.5, center.y - 2.5), Pos2::new(center.x + 3.5, center.y)], Stroke::new(1.2, color));
+                painter.line_segment([Pos2::new(center.x + 3.5, center.y), Pos2::new(center.x + 2.5, center.y + 2.5)], Stroke::new(1.2, color));
+                painter.line_segment([Pos2::new(center.x + 4.8, center.y - 4.5), Pos2::new(center.x + 6.0, center.y)], Stroke::new(1.2, color));
+                painter.line_segment([Pos2::new(center.x + 6.0, center.y), Pos2::new(center.x + 4.8, center.y + 4.5)], Stroke::new(1.2, color));
             }
             SettingsTab::MotionHud => {
-                // Chevron speedometer
-                painter.line_segment([Pos2::new(center.x - 5.5, center.y + 3.5), Pos2::new(center.x, center.y - 4.0)], Stroke::new(1.5, color));
-                painter.line_segment([Pos2::new(center.x, center.y - 4.0), Pos2::new(center.x + 5.5, center.y + 3.5)], Stroke::new(1.5, color));
-                painter.circle_filled(Pos2::new(center.x, center.y + 1.5), 1.5, color);
+                // Bar chart for telemetry HUD
+                painter.line_segment([Pos2::new(center.x - 5.5, center.y + 5.0), Pos2::new(center.x + 5.5, center.y + 5.0)], Stroke::new(1.2, color));
+                painter.line_segment([Pos2::new(center.x - 3.5, center.y + 5.0), Pos2::new(center.x - 3.5, center.y + 1.0)], Stroke::new(2.0, color));
+                painter.line_segment([Pos2::new(center.x, center.y + 5.0), Pos2::new(center.x, center.y - 2.0)], Stroke::new(2.0, color));
+                painter.line_segment([Pos2::new(center.x + 3.5, center.y + 5.0), Pos2::new(center.x + 3.5, center.y - 5.0)], Stroke::new(2.0, color));
             }
             SettingsTab::Typography => {
-                // Clean "Aa" monospace text
-                painter.text(
-                    center,
-                    egui::Align2::CENTER_CENTER,
-                    "Aa",
-                    egui::FontId::monospace(11.0),
-                    color,
-                );
+                // Clean typographic "T" icon
+                painter.line_segment([Pos2::new(center.x - 5.0, center.y - 5.0), Pos2::new(center.x + 5.0, center.y - 5.0)], Stroke::new(1.6, color));
+                painter.line_segment([Pos2::new(center.x, center.y - 5.0), Pos2::new(center.x, center.y + 5.0)], Stroke::new(1.6, color));
+                painter.line_segment([Pos2::new(center.x - 2.5, center.y + 5.0), Pos2::new(center.x + 2.5, center.y + 5.0)], Stroke::new(1.3, color));
             }
             SettingsTab::Updates => {
                 // Downward update arrow into tray
-                painter.line_segment([Pos2::new(center.x, center.y - 5.0), Pos2::new(center.x, center.y + 2.5)], Stroke::new(1.4, color));
-                painter.line_segment([Pos2::new(center.x - 3.0, center.y - 0.5), Pos2::new(center.x, center.y + 2.5)], Stroke::new(1.4, color));
-                painter.line_segment([Pos2::new(center.x + 3.0, center.y - 0.5), Pos2::new(center.x, center.y + 2.5)], Stroke::new(1.4, color));
-                painter.line_segment([Pos2::new(center.x - 5.0, center.y + 5.5), Pos2::new(center.x + 5.0, center.y + 5.5)], Stroke::new(1.4, color));
+                painter.line_segment([Pos2::new(center.x - 5.5, center.y + 2.0), Pos2::new(center.x - 5.5, center.y + 5.0)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x - 5.5, center.y + 5.0), Pos2::new(center.x + 5.5, center.y + 5.0)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x + 5.5, center.y + 5.0), Pos2::new(center.x + 5.5, center.y + 2.0)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x, center.y - 5.5), Pos2::new(center.x, center.y + 2.0)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x - 3.0, center.y - 0.5), Pos2::new(center.x, center.y + 2.0)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x + 3.0, center.y - 0.5), Pos2::new(center.x, center.y + 2.0)], Stroke::new(1.3, color));
             }
             SettingsTab::Preview => {
-                // Monitor preview canvas
-                let mon = Rect::from_center_size(Pos2::new(center.x, center.y - 1.5), Vec2::new(12.0, 9.0));
-                painter.rect_stroke(mon, 1.0, Stroke::new(1.3, color));
-                painter.line_segment([Pos2::new(center.x, center.y + 3.0), Pos2::new(center.x, center.y + 5.5)], Stroke::new(1.3, color));
-                painter.line_segment([Pos2::new(center.x - 3.0, center.y + 5.5), Pos2::new(center.x + 3.0, center.y + 5.5)], Stroke::new(1.3, color));
+                // Eye for Live Preview
+                painter.line_segment([Pos2::new(center.x - 6.0, center.y), Pos2::new(center.x - 2.0, center.y - 3.5)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x - 2.0, center.y - 3.5), Pos2::new(center.x + 2.0, center.y - 3.5)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x + 2.0, center.y - 3.5), Pos2::new(center.x + 6.0, center.y)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x - 6.0, center.y), Pos2::new(center.x - 2.0, center.y + 3.5)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x - 2.0, center.y + 3.5), Pos2::new(center.x + 2.0, center.y + 3.5)], Stroke::new(1.3, color));
+                painter.line_segment([Pos2::new(center.x + 2.0, center.y + 3.5), Pos2::new(center.x + 6.0, center.y)], Stroke::new(1.3, color));
+                painter.circle_filled(center, 1.6, color);
             }
         }
     }

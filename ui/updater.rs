@@ -2,6 +2,8 @@ use crate::ui::theme::Theme;
 use egui::{Color32, Rect, Stroke, Vec2};
 use std::path::PathBuf;
 use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -104,7 +106,10 @@ impl AppUpdater {
         thread::spawn(move || {
             let api_url = "https://api.github.com/repos/Saboor-Hamedi/typingforge/releases/latest";
 
-            let out = Command::new("curl")
+            let mut cmd = Command::new("curl");
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: suppress console window
+            let out = cmd
                 .args([
                     "-s",
                     "--connect-timeout", "10",
@@ -228,7 +233,10 @@ impl AppUpdater {
             // Clean previous partial download if present
             let _ = std::fs::remove_file(&target_file);
 
-            let child_res = Command::new("curl")
+            let mut cmd = Command::new("curl");
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: suppress console window
+            let child_res = cmd
                 .args([
                     "-L",
                     "-s",
@@ -347,9 +355,14 @@ impl AppUpdater {
                 let border_col = if resp.hovered() { theme.text_dim } else { theme.border };
                 p.rect_filled(rect, rounding, bg);
                 p.rect_stroke(rect, rounding, Stroke::new(1.0, border_col));
-                let label = if compact { "⟳ Update" } else { "⟳ Check for Updates" };
                 let col = if resp.hovered() { theme.accent } else { theme.text_dim };
-                p.text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), col);
+
+                let icon_x = if compact { rect.min.x + 18.0 } else { rect.min.x + 28.0 };
+                draw_vector_refresh(&p, egui::Pos2::new(icon_x, rect.center().y), 4.2, col);
+
+                let label = if compact { "Update" } else { "Check for Updates" };
+                let text_x = if compact { rect.min.x + 29.0 } else { rect.min.x + 42.0 };
+                p.text(egui::Pos2::new(text_x, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), col);
 
                 if resp.clicked_by(egui::PointerButton::Primary) {
                     self.check_for_updates(true);
@@ -370,7 +383,14 @@ impl AppUpdater {
                 let text_col = Color32::from_rgb(52, 211, 153);
                 p.rect_filled(rect, rounding, bg);
                 p.rect_stroke(rect, rounding, Stroke::new(1.0, border_col));
-                p.text(rect.center(), egui::Align2::CENTER_CENTER, "✓ Up to date", egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), text_col);
+
+                let icon_x = if compact { rect.min.x + 18.0 } else { rect.min.x + 28.0 };
+                let cy = rect.center().y;
+                p.line_segment([egui::Pos2::new(icon_x - 3.5, cy), egui::Pos2::new(icon_x - 1.0, cy + 3.0)], Stroke::new(1.4, text_col));
+                p.line_segment([egui::Pos2::new(icon_x - 1.0, cy + 3.0), egui::Pos2::new(icon_x + 4.0, cy - 3.5)], Stroke::new(1.4, text_col));
+
+                let text_x = if compact { rect.min.x + 29.0 } else { rect.min.x + 42.0 };
+                p.text(egui::Pos2::new(text_x, cy), egui::Align2::LEFT_CENTER, "Up to date", egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), text_col);
 
                 if resp.clicked_by(egui::PointerButton::Primary) {
                     self.check_for_updates(true);
@@ -381,7 +401,15 @@ impl AppUpdater {
                 let bg = theme.accent.linear_multiply(0.2);
                 p.rect_filled(rect, rounding, bg);
                 p.rect_stroke(rect, rounding, Stroke::new(1.0, theme.accent));
-                p.text(rect.center(), egui::Align2::CENTER_CENTER, "⬇ Starting…", egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), theme.accent);
+
+                let icon_x = if compact { rect.min.x + 18.0 } else { rect.min.x + 28.0 };
+                let cy = rect.center().y;
+                p.line_segment([egui::Pos2::new(icon_x, cy - 4.0), egui::Pos2::new(icon_x, cy + 2.5)], Stroke::new(1.3, theme.accent));
+                p.line_segment([egui::Pos2::new(icon_x - 2.5, cy), egui::Pos2::new(icon_x, cy + 2.5)], Stroke::new(1.3, theme.accent));
+                p.line_segment([egui::Pos2::new(icon_x + 2.5, cy), egui::Pos2::new(icon_x, cy + 2.5)], Stroke::new(1.3, theme.accent));
+
+                let text_x = if compact { rect.min.x + 29.0 } else { rect.min.x + 42.0 };
+                p.text(egui::Pos2::new(text_x, cy), egui::Align2::LEFT_CENTER, "Starting…", egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), theme.accent);
                 self.start_download();
             }
             UpdateStatus::Downloading { progress_pct, .. } => {
@@ -392,19 +420,36 @@ impl AppUpdater {
                 let prog_rect = Rect::from_min_size(rect.min, Vec2::new(fill_w, rect.height()));
                 p.rect_filled(prog_rect, rounding, theme.accent.linear_multiply(0.35));
                 p.rect_stroke(rect, rounding, Stroke::new(1.0, theme.accent));
+
+                let icon_x = if compact { rect.min.x + 18.0 } else { rect.min.x + 28.0 };
+                let cy = rect.center().y;
+                p.line_segment([egui::Pos2::new(icon_x, cy - 4.0), egui::Pos2::new(icon_x, cy + 2.5)], Stroke::new(1.3, theme.text_active));
+                p.line_segment([egui::Pos2::new(icon_x - 2.5, cy), egui::Pos2::new(icon_x, cy + 2.5)], Stroke::new(1.3, theme.text_active));
+                p.line_segment([egui::Pos2::new(icon_x + 2.5, cy), egui::Pos2::new(icon_x, cy + 2.5)], Stroke::new(1.3, theme.text_active));
+
                 let label = if compact {
-                    format!("⬇ {:.0}%", progress_pct)
+                    format!("{:.0}%", progress_pct)
                 } else {
-                    format!("⬇ Downloading {:.0}%", progress_pct)
+                    format!("Downloading {:.0}%", progress_pct)
                 };
-                p.text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), theme.text_active);
+                let text_x = if compact { rect.min.x + 29.0 } else { rect.min.x + 42.0 };
+                p.text(egui::Pos2::new(text_x, cy), egui::Align2::LEFT_CENTER, label, egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), theme.text_active);
             }
             UpdateStatus::ReadyToInstall { .. } => {
                 ui.ctx().request_repaint();
                 let bg = if resp.hovered() { theme.accent.linear_multiply(0.85) } else { theme.accent };
                 p.rect_filled(rect, rounding, bg);
-                let label = if compact { "⚡ Restart" } else { "⚡ Restart to Update" };
-                p.text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), Color32::from_rgb(10, 14, 22));
+
+                let icon_x = if compact { rect.min.x + 18.0 } else { rect.min.x + 28.0 };
+                let cy = rect.center().y;
+                let bolt_col = Color32::from_rgb(10, 14, 22);
+                p.line_segment([egui::Pos2::new(icon_x + 1.0, cy - 4.5), egui::Pos2::new(icon_x - 2.5, cy + 0.5)], Stroke::new(1.3, bolt_col));
+                p.line_segment([egui::Pos2::new(icon_x - 2.5, cy + 0.5), egui::Pos2::new(icon_x + 0.5, cy + 0.5)], Stroke::new(1.3, bolt_col));
+                p.line_segment([egui::Pos2::new(icon_x + 0.5, cy + 0.5), egui::Pos2::new(icon_x - 1.5, cy + 4.5)], Stroke::new(1.3, bolt_col));
+
+                let label = if compact { "Restart" } else { "Restart to Update" };
+                let text_x = if compact { rect.min.x + 29.0 } else { rect.min.x + 42.0 };
+                p.text(egui::Pos2::new(text_x, cy), egui::Align2::LEFT_CENTER, label, egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), bolt_col);
 
                 if resp.clicked_by(egui::PointerButton::Primary) {
                     self.apply_and_restart();
@@ -414,8 +459,16 @@ impl AppUpdater {
                 let bg = Color32::from_rgba_unmultiplied(239, 68, 68, 25);
                 p.rect_filled(rect, rounding, bg);
                 p.rect_stroke(rect, rounding, Stroke::new(1.0, Color32::from_rgb(239, 68, 68)));
-                let label = if compact { "⚠ Retry" } else { "⚠ Retry Update" };
-                p.text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), Color32::from_rgb(255, 100, 100));
+                let err_col = Color32::from_rgb(255, 100, 100);
+
+                let icon_x = if compact { rect.min.x + 18.0 } else { rect.min.x + 28.0 };
+                let cy = rect.center().y;
+                p.line_segment([egui::Pos2::new(icon_x, cy - 4.0), egui::Pos2::new(icon_x, cy + 1.0)], Stroke::new(1.4, err_col));
+                p.circle_filled(egui::Pos2::new(icon_x, cy + 3.5), 1.0, err_col);
+
+                let label = if compact { "Retry" } else { "Retry Update" };
+                let text_x = if compact { rect.min.x + 29.0 } else { rect.min.x + 42.0 };
+                p.text(egui::Pos2::new(text_x, cy), egui::Align2::LEFT_CENTER, label, egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), err_col);
 
                 if resp.clicked_by(egui::PointerButton::Primary) {
                     self.check_for_updates(true);
@@ -447,4 +500,21 @@ fn is_version_newer(remote: &str, current: &str) -> bool {
         }
     }
     r_parts.len() > c_parts.len()
+}
+
+fn draw_vector_refresh(p: &egui::Painter, center: egui::Pos2, r: f32, col: Color32) {
+    use std::f32::consts::PI;
+    let start_a = -0.3 * PI;
+    let end_a = 1.35 * PI;
+    let steps = 14;
+    for i in 0..steps {
+        let a1 = start_a + (end_a - start_a) * (i as f32 / steps as f32);
+        let a2 = start_a + (end_a - start_a) * ((i + 1) as f32 / steps as f32);
+        let p1 = egui::Pos2::new(center.x + r * a1.cos(), center.y + r * a1.sin());
+        let p2 = egui::Pos2::new(center.x + r * a2.cos(), center.y + r * a2.sin());
+        p.line_segment([p1, p2], Stroke::new(1.3, col));
+    }
+    let tip = egui::Pos2::new(center.x + r * start_a.cos(), center.y + r * start_a.sin());
+    p.line_segment([tip, egui::Pos2::new(tip.x + 2.8, tip.y - 1.0)], Stroke::new(1.3, col));
+    p.line_segment([tip, egui::Pos2::new(tip.x + 1.0, tip.y + 2.8)], Stroke::new(1.3, col));
 }

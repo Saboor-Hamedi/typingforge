@@ -1,5 +1,6 @@
 pub mod components;
 pub mod confirm;
+pub mod fuzzy;
 pub mod header;
 pub mod panels;
 pub mod results;
@@ -11,6 +12,7 @@ pub mod velocity_graph;
 
 pub use components::{ButtonVariant, UnifiedButton, UnifiedInput, VelocityGraphWidget};
 pub use confirm::ConfirmModal;
+pub use fuzzy::{FuzzyPalette, PaletteAction};
 pub use header::{HeaderScreen, HeaderWidget};
 pub use panels::{EditorPanel, ResultsView, SettingsPanel, TypingView};
 pub use results::ResultsScreen;
