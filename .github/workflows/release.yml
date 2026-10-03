@@ -57,50 +57,82 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }} --bin forgetyping
 
-      # Windows: Build "Next, Next, Next" Graphical Installer & Portable Zip
-      - name: Compile Windows Inno Setup Installer & Portable Zip
+      # Windows: Build Graphical Installer (.exe), Standalone .exe, and Portable .zip
+      - name: Compile Windows Inno Setup Installer & Binaries
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path "target/release", "target/installer", "dist"
-          Copy-Item "target/${{ matrix.target }}/release/forgetyping.exe" "target/release/forgetyping.exe" -Force
-          Copy-Item "target/${{ matrix.target }}/release/forgetyping.exe" "dist/forgetyping.exe" -Force
-
-          # Compress portable zip
-          Compress-Archive -Path "dist/forgetyping.exe" -DestinationPath "target/installer/forgetyping-windows-portable.zip" -Force
-
-          # Install Inno Setup
-          choco install innosetup -y --no-progress
-
-          # Compile the installer using full ISCC path
-          $innoExe = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          if (Test-Path $innoExe) {
-            & $innoExe installer/inno_setup.iss
-          } else {
-            iscc installer/inno_setup.iss
+          New-Item -ItemType Directory -Force -Path "dist", "target/release", "src/target/release", "target/installer", "src/target/installer"
+          
+          # Find compiled forgetyping.exe
+          $exe = Get-ChildItem -Path . -Filter "forgetyping.exe" -Recurse | Where-Object { $_.FullName -like "*release*forgetyping.exe" } | Select-Object -First 1
+          if (-not $exe) {
+            throw "Could not find compiled forgetyping.exe"
           }
+          Write-Host "Found binary: $($exe.FullName)"
+          
+          # 1. Standalone Direct Executable (.exe)
+          Copy-Item $exe.FullName "dist/forgetyping-windows-x86_64.exe" -Force
+          Copy-Item $exe.FullName "dist/forgetyping.exe" -Force
+          Copy-Item $exe.FullName "target/release/forgetyping.exe" -Force
+          Copy-Item $exe.FullName "src/target/release/forgetyping.exe" -Force
+          
+          # 2. Portable Zip (.zip)
+          Compress-Archive -Path "dist/forgetyping.exe" -DestinationPath "dist/forgetyping-windows-portable.zip" -Force
+          Remove-Item "dist/forgetyping.exe" -Force
+          
+          # 3. Graphical Installer (.exe) via Inno Setup
+          choco install innosetup -y --no-progress
+          $iss = Get-ChildItem -Path . -Filter "inno_setup.iss" -Recurse | Select-Object -First 1
+          if ($iss) {
+            Write-Host "Compiling Inno Setup script: $($iss.FullName)"
+            $innoExe = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            if (Test-Path $innoExe) {
+              & $innoExe $iss.FullName
+            } else {
+              iscc $iss.FullName
+            }
+            
+            # Find and copy setup installer to dist
+            $setup = Get-ChildItem -Path . -Filter "*setup.exe" -Recurse | Select-Object -First 1
+            if ($setup) {
+              Copy-Item $setup.FullName "dist/forgetyping-windows-setup.exe" -Force
+              Write-Host "Installer created: $($setup.FullName)"
+            }
+          }
+          
+          # List all generated files for Windows
+          Get-ChildItem -Path "dist"
 
-          # Verify files exist
-          Get-ChildItem -Path "target/installer"
-
-      # Unix: Package tar.gz archives
-      - name: Package Unix Binaries
+      # Unix: Package Standalone Direct Binary & Compressed tar.gz Archive
+      - name: Package Unix Binaries & Archives
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/forgetyping dist/
-          cd dist && tar -czvf ../${{ matrix.asset_name }}.tar.gz forgetyping
+          # Find the compiled binary
+          BIN_PATH=$(find . -name "forgetyping" -type f -perm -111 2>/dev/null | grep -E "release/forgetyping$" | head -n 1)
+          if [ -z "$BIN_PATH" ]; then
+            BIN_PATH="target/${{ matrix.target }}/release/forgetyping"
+          fi
+          echo "Found binary at $BIN_PATH"
+          
+          # 1. Standalone direct binary (no extraction needed)
+          cp "$BIN_PATH" "dist/${{ matrix.asset_name }}"
+          chmod +x "dist/${{ matrix.asset_name }}"
+          
+          # 2. Compressed tar.gz archive
+          cd dist && tar -czvf "${{ matrix.asset_name }}.tar.gz" "${{ matrix.asset_name }}"
+          cd ..
+          
+          ls -la dist/
 
       # Upload Artifacts for release consolidation
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-${{ matrix.asset_name }}
-          path: |
-            target/installer/forgetyping-windows-setup.exe
-            target/installer/forgetyping-windows-portable.zip
-            *.tar.gz
-          if-no-files-found: ignore
+          path: dist/*
+          if-no-files-found: warn
 
   publish-release:
     name: Publish GitHub Release
