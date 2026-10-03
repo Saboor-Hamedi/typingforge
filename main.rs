@@ -1,9 +1,18 @@
-#![windows_subsystem = "windows"]
+//! Application binary entry point for TypingForge.
+//!
+//! Handles command-line arguments (such as the `--publish` subcommand pipeline)
+//! and configures the `eframe` / `egui` native desktop window (borderless, transparent,
+//! resizable, and min-sized) before launching the main [`VelotypeApp`] event loop.
 
+#![windows_subsystem = "windows"]
 
 use eframe::egui;
 use forgetyping::app::VelotypeApp;
 
+/// Main desktop application entry point.
+///
+/// Sets up the desktop viewport with a modern borderless window design and initializes
+/// the egui frame runner.
 fn main() -> eframe::Result<()> {
     // If invoked as `cargo run publish` or `velotype publish`
     let args: Vec<String> = std::env::args().collect();
@@ -23,8 +32,8 @@ fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Velotype - Kinetic Typing & Real-Time Velocity Graph")
-            .with_decorations(false) // Borderless window!
-            .with_transparent(true)
+            .with_decorations(false) // Borderless custom window titlebar rendered in UI
+            .with_transparent(true)  // Enables window translucency and rounded outer corners
             .with_inner_size([920.0, 700.0])
             .with_min_inner_size([860.0, 600.0])
             .with_resizable(true)
@@ -39,3 +48,4 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| Ok(Box::new(VelotypeApp::new(cc)))),
     )
 }
+

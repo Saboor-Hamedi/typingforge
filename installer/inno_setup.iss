@@ -2,7 +2,7 @@
 ; Compiles a lightweight, professional graphical installer that requires zero admin rights.
 
 #define MyAppName "typingforge"
-#define MyAppVersion "0.1.15"
+#define MyAppVersion "0.1.16"
 #define MyAppPublisher "Saboor Hamedi"
 #define MyAppURL "https://github.com/Saboor-Hamedi/typingforge"
 #define MyAppExeName "forgetyping.exe"

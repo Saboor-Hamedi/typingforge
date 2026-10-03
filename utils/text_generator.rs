@@ -121,19 +121,30 @@ through the air, and there is a sickly moment of dark surprise as you try and
 readjust the way you thought of things.
 "#;
 
+/// Represents an exported JSON sentence record matching the schema expected by `velotype_sentences.json`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GeneratedPassageRecord {
+    /// Sequential passage identifier (1-indexed).
     pub id: usize,
+    /// Fully normalized passage text with standard ASCII quotes and punctuation.
     pub text: String,
+    /// Category classification ("prose", "quotes", "custom").
     pub category: String,
+    /// Number of whitespace-separated words in the text.
     pub word_count: usize,
+    /// ISO 8601 UTC creation timestamp string.
     pub date: String,
 }
 
+/// Native engine for fetching, splitting, normalizing, and slicing public-domain literature.
 pub struct TextGenerator;
 
 impl TextGenerator {
-    /// Strips Project Gutenberg header/footer markers and raw carriage returns.
+    /// Strips Project Gutenberg header/footer markers, metadata, and raw carriage returns.
+    /// Removes Project Gutenberg licensing preambles, header blocks, and legal footers.
+    ///
+    /// Detects markers such as `*** START OF THE PROJECT GUTENBERG EBOOK` and
+    /// `*** END OF THE PROJECT GUTENBERG EBOOK`, returning only the core literary content.
     pub fn clean_gutenberg(text: &str) -> String {
         let mut cleaned = text.to_string();
 
@@ -156,7 +167,12 @@ impl TextGenerator {
         cleaned
     }
 
-    /// Splits text into clean sentences and ensures valid punctuation and length.
+    /// Splits continuous literary text into well-formed, complete sentences.
+    ///
+    /// Applies strict quality filters:
+    /// - Character length between 25 and 600 characters.
+    /// - Minimum 80% alphabetical character ratio (eliminates tables, ascii art, and raw numbers).
+    /// - Ensures terminating sentence punctuation (`.`, `!`, `?`).
     pub fn split_sentences(text: &str) -> Vec<String> {
         let mut sentences = Vec::new();
         let normalized = sanitize_text(text);
@@ -221,6 +237,9 @@ impl TextGenerator {
     }
 
     /// Slices complete sentences into exact target word chunks (e.g. 25 or 40 words).
+    ///
+    /// Preserves grammatical continuity, normalizes internal quote characters, ensures
+    /// valid terminal punctuation, and skips duplicate chunks via the `used` set.
     pub fn slice_to_words(
         sentences: &[String],
         target_words: usize,
@@ -299,7 +318,10 @@ impl TextGenerator {
         chunks
     }
 
-    /// Fetches texts from public-domain sources or uses built-in classic corpus.
+    /// Fetches texts from public-domain sources or falls back to the embedded classic corpus.
+    ///
+    /// When online, attempts background HTTP downloads via curl without opening console windows.
+    /// If offline or if requests timeout, automatically uses the rich offline [`CLASSIC_CORPUS`].
     pub fn fetch_corpus() -> String {
         let mut corpus = Vec::new();
 
@@ -336,8 +358,16 @@ impl TextGenerator {
         corpus.join("\n\n")
     }
 
-    /// Generates structured records and streams them directly into the SQLite database
-    /// in transactions of 500-1,000 items each.
+    /// Generates structured records and streams them directly into the SQLite database.
+    ///
+    /// Architecture:
+    /// - Operates in incremental chunks of 500-1,000 records per SQLite transaction to prevent
+    ///   memory spikes and locking delays.
+    /// - Emits real-time progress to an atomic counter (`progress`) for UI progress bar rendering.
+    /// - Checks an atomic cancellation token (`cancel`) before every batch to permit instant aborts.
+    /// - Fully sanitizes and normalizes every passage (`sanitize_text`), ensuring zero weird quotes.
+    ///
+    /// Supports scaling from 10 to 10,000,000 records safely.
     pub fn generate_into_database(
         db: &DatabaseConnection,
         total_requested: usize,
@@ -429,7 +459,9 @@ impl TextGenerator {
         Ok(total_inserted)
     }
 
-    /// Generates structured records and outputs to a JSON file (matching `velotype_sentences.json`).
+    /// Generates structured records and outputs to a formatted JSON file.
+    ///
+    /// Preserves exact compatibility with `velotype_sentences.json` / Python output.
     pub fn generate_to_json_file(path: &Path, count: usize) -> Result<usize, String> {
         let raw_corpus = Self::fetch_corpus();
         let mut sentences = Self::split_sentences(&raw_corpus);

@@ -1,14 +1,26 @@
+//! Kinetic caret physics and rendering system.
+//!
+//! Provides spring-damper physical simulation for smooth caret motion across text,
+//! substep numerical integration to eliminate explosion on large frame deltas,
+//! velocity-based horizontal stretching, layered bloom glow, and multiple geometry styles.
+
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 
+/// Visual representation and geometry style of the typing caret cursor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CaretStyle {
+    /// Classic vertical line cursor with configurable width and rounded cap.
     Line,
+    /// Thick vertical bar cursor with prominent presence.
     Bar,
+    /// Full character-sized rectangular box with translucent fill and stroke outline.
     Block,
+    /// Horizontal underline pinned to the bottom of the current glyph bounding box.
     Underline,
 }
 
 impl CaretStyle {
+    /// Array of all available caret styles for UI iteration and selection.
     pub const ALL: &'static [CaretStyle] = &[
         CaretStyle::Line,
         CaretStyle::Bar,
@@ -16,6 +28,7 @@ impl CaretStyle {
         CaretStyle::Underline,
     ];
 
+    /// Human-friendly display label for UI settings and selectors.
     pub fn display_name(&self) -> &'static str {
         match self {
             CaretStyle::Line => "Line",
@@ -26,23 +39,40 @@ impl CaretStyle {
     }
 }
 
+/// Kinetic spring-damper caret simulation controller.
+///
+/// Simulates physical movement towards the current target character position using
+/// a damped harmonic oscillator model with velocity clamping and substep integration.
 #[derive(Debug, Clone)]
 pub struct CaretController {
+    /// Current interpolated 2D position in screen coordinates.
     pub current_pos: Pos2,
+    /// Target 2D position corresponding to the active character anchor.
     pub target_pos: Pos2,
+    /// Current 2D velocity vector (pixels per second).
     pub velocity: Vec2,
 
+    /// Target character bounding box width for block/underline sizing.
     pub target_width: f32,
+    /// Target character bounding box height for line/bar sizing.
     pub target_height: f32,
+    /// Interpolated current width of the cursor geometry.
     pub current_width: f32,
+    /// Interpolated current height of the cursor geometry.
     pub current_height: f32,
 
+    /// Time elapsed in seconds since the last keystroke (used for idle blink fade).
     pub idle_time: f32,
+    /// Flag indicating if user typed during the current frame.
     pub is_typing: bool,
 
+    /// Active geometric styling.
     pub style: CaretStyle,
+    /// Base thickness/width in pixels.
     pub base_width: f32,
+    /// Spring response time constant in seconds (lower = snappier, higher = smoother).
     pub smoothness: f32,
+    /// Multiplier for layered bloom glow intensity (0.0 to 1.0).
     pub glow_intensity: f32,
 }
 
@@ -67,6 +97,10 @@ impl Default for CaretController {
 }
 
 impl CaretController {
+    /// Advances the kinetic spring simulation by delta time `dt` (in seconds).
+    ///
+    /// Uses fixed substeps (8ms max) to maintain numerical stability during frame drops
+    /// or window focus transitions, and clamps maximum velocity to prevent runaway.
     pub fn update(&mut self, dt: f32) {
         if self.is_typing {
             self.idle_time = 0.0;
@@ -113,6 +147,9 @@ impl CaretController {
         self.current_height += (self.target_height - self.current_height) * (dt * 18.0).min(1.0);
     }
 
+    /// Updates the target position and bounding dimensions for the caret.
+    ///
+    /// If the target position shifts, resets idle blink timer so the caret is immediately solid.
     pub fn set_target(&mut self, pos: Pos2, char_width: f32, char_height: f32) {
         if self.current_pos == Pos2::ZERO {
             self.current_pos = pos;
@@ -126,6 +163,8 @@ impl CaretController {
         self.target_height = char_height;
     }
 
+    /// Teleports the caret immediately to `pos`, zeroing velocity.
+    /// Used on line resets, test start, and returning from window defocus.
     pub fn snap_to(&mut self, pos: Pos2) {
         self.current_pos = pos;
         self.target_pos = pos;
@@ -133,6 +172,8 @@ impl CaretController {
         self.idle_time = 0.0;
     }
 
+    /// Computes the opacity multiplier (0.0 to 1.0) using an eased cosine fade curve.
+    /// Solid while typing, then gently fades during inactivity.
     pub fn blink_alpha(&self) -> f32 {
         if self.idle_time < 0.4 {
             1.0
@@ -142,6 +183,7 @@ impl CaretController {
         }
     }
 
+    /// Renders the caret with motion stretch, layered bloom glow, and selected style geometry.
     pub fn draw(&self, painter: &egui::Painter, primary_color: Color32) {
         let alpha = self.blink_alpha();
         if alpha <= 0.02 {

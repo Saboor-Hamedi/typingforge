@@ -867,7 +867,13 @@ impl DbQueries {
         })
     }
 
-    /// Bulk inserts generated or imported passages in a high-performance single transaction
+    /// Bulk inserts generated or imported passages in a high-performance single SQLite transaction.
+    ///
+    /// For every passage:
+    /// - Computes word count by splitting whitespace.
+    /// - Inserts into the `passages` table.
+    /// - Synchronizes the FTS5 full-text search index (`passages_fts`) using the generated `rowid`.
+    /// - Commits the entire batch atomically, avoiding per-row transaction overhead.
     pub fn insert_passages_batch(
         db: &DatabaseConnection,
         passages: &[(&str, &str, bool)],
@@ -896,8 +902,16 @@ impl DbQueries {
         })
     }
 
-    /// Normalizes existing database passages and texts: replaces smart/curly quotes,
-    /// strange symbols, typographic dashes, and excess whitespace into standard forms.
+    /// Normalizes existing database passages and texts in place.
+    ///
+    /// Scans both the `passages` and `texts` tables:
+    /// - Replaces curly/smart quotes (“ ” „ ‟ « ») with standard ASCII `"`.
+    /// - Replaces curved apostrophes and primes (‘ ’ ‚ ‛ ′) with standard ASCII `'`.
+    /// - Normalizes dashes (— – ―) to hyphens (`-`).
+    /// - Collapses whitespace and strips zero-width artifacts.
+    /// - Updates both primary tables and their respective FTS5 full-text virtual tables in a single transaction.
+    ///
+    /// Returns the total number of records modified.
     pub fn normalize_existing_passages(db: &DatabaseConnection) -> Result<usize> {
         db.with_conn(|conn| {
             let tx = conn.transaction()?;

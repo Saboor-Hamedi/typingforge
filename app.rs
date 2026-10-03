@@ -1,3 +1,11 @@
+//! Central desktop application state machine, update coordinator, and UI router.
+//!
+//! [`VelotypeApp`] coordinates:
+//! - Subsystem integration: audio synthesis, particle physics, caret interpolation, and database queries.
+//! - Screen navigation between [`AppScreen::Typing`], [`AppScreen::Results`], [`AppScreen::Settings`], and [`AppScreen::Editor`].
+//! - Real-time dirty detection and automatic JSON synchronization (`setting.json`).
+//! - Global keyboard accelerators (`Ctrl+P` command palette, `Ctrl+,` settings, `Tab+Enter` restart, `Escape` navigation).
+
 use crate::audio::AudioManager;
 use crate::data::{AppConfig, ConfigLoader};
 use crate::db::{DatabaseConnection, DbKeystrokeLog, DbQueries, DbSession, PersonalBest, User};
@@ -9,36 +17,61 @@ use crate::ui::panels::{EditorPanel, ResultsView, SettingsPanel, TypingView};
 use crate::ui::{HeaderScreen, HeaderWidget, Theme};
 use egui::{Color32, Key, Pos2, Rect, Stroke};
 
+/// Supported top-level views/screens in the application.
 #[derive(Debug, PartialEq, Eq)]
 pub enum AppScreen {
+    /// Active interactive typing test view.
     Typing,
+    /// Post-session benchmark scorecard and velocity time-series graph.
     Results,
+    /// Comprehensive configuration and preferences panel.
     Settings,
+    /// Custom text passage editor and corpus creator.
     Editor,
 }
 
+/// The root `eframe` application state for TypingForge.
 pub struct VelotypeApp {
+    /// Active user preferences and persistent settings.
     config: AppConfig,
+    /// Core typing game engine tracking words, timing, and keystrokes.
     engine: GameEngine,
+    /// Kinetic caret controller managing physics springs and glow rendering.
     caret: CaretController,
+    /// Particle emitter for celebration bursts and key feedback.
     particles: ParticleSystem,
+    /// Screen trauma/shake simulator for mistake feedback.
     shake: ScreenShake,
+    /// Audio manager for key clicks and streak chimes.
     audio: AudioManager,
+    /// Thread-safe SQLite database connection handle.
     db: DatabaseConnection,
+    /// Currently authenticated local user profile, if logged in.
     current_user: Option<User>,
+    /// Sub-panel for custom passage editing.
     editor_panel: EditorPanel,
+    /// Sub-panel for settings tabs (Theme, Caret, Audio, Custom Texts, etc.).
     settings_panel: SettingsPanel,
+    /// Global quick-action search and passage switcher modal.
     fuzzy_palette: FuzzyPalette,
+    /// Active primary screen displayed to the user.
     current_screen: AppScreen,
+    /// Wall-clock epoch timestamp of the previous frame for delta time calculation.
     last_frame_time: f64,
+    /// Whether the most recently completed session was a new personal best.
     is_personal_best: bool,
+    /// Countdown timer for the PB celebration badge display.
     pb_banner_timer: f32,
+    /// Tracks window focus state across frames to prevent caret jump artifacts.
     was_focused: bool,
+    /// Dropdown popup visibility for active user profile menu.
     is_profile_dropdown_open: bool,
+    /// Cached copy of configuration used to detect modifications and trigger auto-saves.
     last_saved_config: AppConfig,
 }
 
 impl VelotypeApp {
+    /// Constructs and initializes the application from persisted configuration and SQLite storage.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let config = ConfigLoader::load();
         let db = DatabaseConnection::open().unwrap_or_else(|e| {

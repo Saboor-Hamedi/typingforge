@@ -1,39 +1,70 @@
+//! Core typing simulation engine and real-time kinetic telemetry.
+//!
+//! The [`GameEngine`] is the central authority on:
+//! - Keystroke validation against target text ([`CharStatus`]: Pending, Correct, Incorrect).
+//! - Caret cursor positioning (`current_word`, `current_char`).
+//! - High-precision latency tracking and micro-second keystroke logging.
+//! - Instantaneous rolling velocity calculation (WPM over a 1.2-second sliding window).
+//! - Continuous exponential moving average (EMA) metric smoothing via [`LiveMetrics`].
+//! - Perfect streak milestones (e.g. 10, 25, 50, 100, 200).
+//! - Graceful typo advance and backspace unwinding (including `Ctrl+Backspace`).
+//! - Automatic instantaneous test completion when the final character is pressed.
+
 use super::metrics::LiveMetrics;
 use crate::game::stats::{KeystrokeRecord, SessionStats, VelocityPoint};
 use crate::game::text::{CharStatus, DisplayChar, TextGenerator};
 use std::collections::VecDeque;
 
+/// Supported gameplay evaluation modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GameMode {
+    /// Test ends when the countdown timer reaches zero seconds.
     Timed,
+    /// Test ends when all target words have been typed.
     Words,
 }
 
+/// Duration preset options for [`GameMode::Timed`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TimedDuration {
+    /// 25-second sprint duration.
     Sec25 = 25,
+    /// 40-second endurance duration.
     Sec40 = 40,
 }
 
+/// Target word count options for [`GameMode::Words`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum WordCountTarget {
+    /// Standard 25-word speed test.
     Words25 = 25,
+    /// Extended 40-word accuracy test.
     Words40 = 40,
 }
 
+/// High-level lifecycle state machine for an active typing session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameState {
+    /// Waiting for the user's first keystroke. Timer is halted at 0.0s.
     Idle,
+    /// Active typing session in progress. Clock is advancing and metrics are updating.
     Running,
+    /// Session has reached its end condition (words completed or timer expired).
     Completed,
 }
 
+/// Configuration settings defining the target session rules.
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
+    /// Active evaluation mode (Timed vs Words).
     pub mode: GameMode,
+    /// Total duration in seconds if running in [`GameMode::Timed`].
     pub timed_duration: TimedDuration,
+    /// Total word target count if running in [`GameMode::Words`].
     pub word_target: WordCountTarget,
+    /// Whether punctuation symbols (.,!?;: etc.) should be generated.
     pub include_punctuation: bool,
+    /// Whether numeric digits (0-9) should be generated.
     pub include_numbers: bool,
 }
 
@@ -49,33 +80,54 @@ impl Default for SessionConfig {
     }
 }
 
+/// The core kinetic typing game engine.
+///
+/// Encapsulates all word layout grids, cursor indexes, time-series velocity telemetry,
+/// mistake records, and milestone streak counters.
 pub struct GameEngine {
+    /// Session configuration defining target rules and mode.
     pub config: SessionConfig,
+    /// Current lifecycle phase (`Idle`, `Running`, or `Completed`).
     pub state: GameState,
+    /// 2D word grid: outer vector is words, inner vector is individual display characters.
     pub words: Vec<Vec<DisplayChar>>,
+    /// 0-indexed index of the current word being typed.
     pub current_word: usize,
+    /// 0-indexed character index within the current word.
     pub current_char: usize,
 
+    /// Absolute wall-clock epoch start timestamp (seconds), if started.
     pub start_time: Option<f64>,
+    /// Elapsed active typing duration in seconds.
     pub elapsed_time: f32,
+    /// Remaining countdown time in seconds (for timed mode).
     pub remaining_time: f32,
 
+    /// Consecutive error-free keystrokes in the current streak.
     pub streak: usize,
+    /// Highest consecutive error-free keystrokes achieved during this session.
     pub max_streak: usize,
+    /// Temporary flag set when hitting streak thresholds (10, 25, 50, 100, 200).
     pub streak_milestone_hit: Option<usize>,
 
+    /// Live telemetry calculators and smoothed metrics for HUD rendering.
     pub live_metrics: LiveMetrics,
 
-    // Keystroke timestamp queue for instant velocity
+    /// Keystroke timestamp queue for instant velocity calculation (1.2s rolling window).
     recent_keystroke_times: VecDeque<f32>,
+    /// Timestamp of the preceding keystroke (used to compute inter-key latency).
     pub last_keystroke_time: f32,
 
+    /// Comprehensive statistical breakdown and velocity history of the session.
     pub stats: SessionStats,
+    /// Flag indicating that the last keystroke was an error (triggers subtle UI shake).
     pub has_error_shake: bool,
+    /// Indicates whether the active test is using a custom/literature passage.
     pub custom_passage_active: bool,
 }
 
 impl GameEngine {
+    /// Creates a new [`GameEngine`] instance initialized with the given session config.
     pub fn new(config: SessionConfig) -> Self {
         let mut engine = Self {
             config: config.clone(),
@@ -100,6 +152,9 @@ impl GameEngine {
         engine
     }
 
+
+    /// Resets all session metrics, resets cursors to index 0, clears keystroke telemetry,
+    /// and generates a fresh text corpus based on active session configuration.
     pub fn reset(&mut self) {
         self.state = GameState::Idle;
         self.current_word = 0;
@@ -137,7 +192,9 @@ impl GameEngine {
             .collect();
     }
 
-    /// Loads passage text (from database or custom input)
+    /// Loads custom or database-provided passage text into the active session.
+    ///
+    /// Splits text by whitespace into words and individual characters with initial [`CharStatus::Pending`].
     pub fn load_passage_text(&mut self, text: &str, is_custom: bool) {
         self.reset();
         self.custom_passage_active = is_custom;
@@ -152,11 +209,12 @@ impl GameEngine {
         }
     }
 
-    /// Loads custom passage (from editor paste or user creation)
+    /// Loads custom passage text (e.g. from clipboard or user input editor) and marks it as custom.
     pub fn load_passage(&mut self, text: &str) {
         self.load_passage_text(text, true);
     }
 
+    /// Loads a passage while simultaneously overriding the target mode, word count, or duration.
     pub fn load_passage_with_mode(
         &mut self,
         text: &str,
@@ -174,6 +232,15 @@ impl GameEngine {
         self.load_passage(text);
     }
 
+    /// Advances the engine simulation clock by `dt` seconds.
+    ///
+    /// Performs per-frame tasks:
+    /// - Decays character pop/scale bounce animations.
+    /// - Advances elapsed time and slides the 1.2s rolling velocity window.
+    /// - Computes instantaneous and cumulative net/raw WPM and accuracy.
+    /// - Feeds telemetry into exponential moving average (EMA) HUD filters.
+    /// - Periodically samples velocity points (every 150ms) for results graph plotting.
+    /// - Evaluates session completion triggers (countdown expiry or word exhaustion).
     pub fn update(&mut self, dt: f32) {
         // Decay character animations
         for word in &mut self.words {
@@ -274,6 +341,9 @@ impl GameEngine {
 
     }
 
+    /// Computes the linear 0-indexed character offset across the entire text passage.
+    ///
+    /// Useful for mapping keystroke logs to exact document coordinates.
     pub fn calculate_current_position(&self) -> usize {
         let mut pos = 0;
         for w in 0..self.current_word.min(self.words.len()) {
@@ -282,6 +352,19 @@ impl GameEngine {
         pos + self.current_char
     }
 
+    /// Handles an incoming typed character keypress event.
+    ///
+    /// Flow:
+    /// - Transitions engine from `Idle` to `Running` upon first keystroke.
+    /// - If space (`' '`), validates or marks untyped characters in current word as incorrect,
+    ///   then advances cursor to the beginning of the next word.
+    /// - If regular character, compares against expected char. On match: marks correct,
+    ///   increments streak counter, triggers milestone alert if applicable, and advances caret.
+    ///   On mismatch: marks character as incorrect, logs mistake, resets streak, and advances
+    ///   caret so typing flow remains natural and uninterrupted.
+    /// - Immediately completes the session if the very last character of the passage is typed.
+    ///
+    /// Returns `true` if keystroke was correct, `false` otherwise.
     pub fn handle_char(&mut self, c: char) -> bool {
         if self.state == GameState::Completed {
             return false;
@@ -384,6 +467,9 @@ impl GameEngine {
         is_correct
     }
 
+    /// Handles a backspace keystroke, supporting single-character unwind and `Ctrl+Backspace` whole-word clearing.
+    ///
+    /// Allows moving backward across word boundaries if at the start of the current word.
     pub fn handle_backspace(&mut self, ctrl: bool) {
         if self.state != GameState::Running {
             return;
@@ -419,12 +505,16 @@ impl GameEngine {
         }
     }
 
+    /// Internal error handler triggered whenever a typed character disagrees with expected text.
     fn on_mistake(&mut self, expected: char) {
         self.streak = 0;
         self.has_error_shake = false;
         *self.stats.key_mistakes.entry(expected).or_insert(0) += 1;
     }
 
+    /// Finalizes the typing session and computes official aggregate benchmarks.
+    ///
+    /// Computes Net WPM, Raw WPM, Accuracy, Consistency, and saves session metrics.
     pub fn complete(&mut self) {
         self.state = GameState::Completed;
         let (net, raw) = SessionStats::calculate_wpm(

@@ -9,27 +9,38 @@ use egui::{Color32, Frame, RichText, Sense, Stroke, Vec2};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+/// Request to load a specific custom or library passage into the active game engine.
 #[derive(Clone, Debug)]
 pub struct CustomPassageRequest {
+    /// Full normalized passage text content.
     pub text: String,
+    /// Desired game mode (Words vs Timed).
     pub mode: GameMode,
+    /// Target word count for words mode.
     pub word_target: Option<WordCountTarget>,
+    /// Countdown duration for timed mode.
     pub duration: Option<TimedDuration>,
 }
 
+/// Target evaluation mode when authoring a custom passage in the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PassageCreationMode {
     Words,
     Time,
 }
 
+/// Thread-safe status notification emitted by the background literature generator worker.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GeneratorStatus {
+    /// No background generation or normalization running.
     Idle,
+    /// Generation or normalization completed with a summary message.
     Success(String),
+    /// Generation or normalization failed with an error message.
     Error(String),
 }
 
+/// Resolves a human-readable title or preview label for database passages.
 fn get_smart_passage_title(passage: &DbPassage) -> String {
     let cat = passage.category.trim();
     if cat.is_empty()
@@ -53,26 +64,48 @@ fn get_smart_passage_title(passage: &DbPassage) -> String {
     }
 }
 
+/// State container for the Custom Texts & Literature Generator settings tab.
+///
+/// Holds form inputs, search filters, toast notifications, and thread-safe atomic handles
+/// for the asynchronous text generation worker.
 pub struct CustomTextsTabState {
+    /// Form input: title/category for single passage creation.
     pub title_input: String,
+    /// Form input: text content for single passage creation.
     pub content_input: String,
+    /// Active search filter query for library browsing.
     pub search_query: String,
+    /// Creation mode (word count vs timer).
     pub mode: PassageCreationMode,
+    /// Target word count option.
     pub word_target: usize,     // 20, 40
+    /// Target duration option in seconds.
     pub time_target_sec: usize, // 20, 40
+    /// Temporary toast feedback (message, expiration timestamp).
     pub toast_message: Option<(String, f64)>, // (message, expiry_timestamp)
+    /// Storage limit notice banner.
     pub limit_notice: Option<String>,
+    /// Passage ID and title pending deletion confirmation.
     pub text_to_delete: Option<(i64, String)>,
+    /// Passage ID currently being edited in place.
     pub editing_passage_id: Option<i64>,
 
     // Bulk text generator state
+    /// Count input string (e.g. "10", "50", "1000", "10000000").
     pub generate_count_input: String,
+    /// Validation or runtime error string for bulk generator.
     pub generate_error: Option<String>,
+    /// Success notification string for bulk generator.
     pub generate_success: Option<String>,
+    /// Flag indicating whether background generation thread is active.
     pub is_generating: Arc<AtomicBool>,
+    /// Atomic progress counter tracking items inserted so far.
     pub generate_progress: Arc<AtomicUsize>,
+    /// Atomic total counter representing target items requested.
     pub generate_total: Arc<AtomicUsize>,
+    /// Atomic cancellation token signaled when user clicks "Cancel".
     pub generate_cancel: Arc<AtomicBool>,
+    /// Shared status notification mutex updated upon background completion.
     pub generator_status: Arc<Mutex<GeneratorStatus>>,
 }
 
@@ -101,6 +134,7 @@ impl Default for CustomTextsTabState {
     }
 }
 
+/// Renderer and event controller for the Custom Texts settings tab.
 pub struct CustomTextsTab;
 
 impl CustomTextsTab {

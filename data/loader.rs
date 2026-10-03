@@ -64,66 +64,104 @@ impl Default for AppConfig {
 // Beautifully Structured Settings File Model for `appData/typingforge/setting.json`
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Root serialized JSON document for `appData/typingforge/setting.json`.
+/// Groups application configuration cleanly by functional category.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsFile {
+    /// Aesthetic theme, accent color, and custom color overrides.
     pub theme: ThemeSettings,
+    /// Caret kinetic physics, geometry, and bloom glow parameters.
     pub caret: CaretSettings,
+    /// Typography and font scaling settings.
     pub typography: TypographySettings,
+    /// Visual effects, telemetry HUD, and particle toggles.
     pub visuals: VisualSettings,
+    /// Audio synthesis, volume, and switch sound presets.
     pub audio: AudioSettings,
+    /// Practice session defaults and guest persistence options.
     pub gameplay: GameplaySettings,
+    /// User profile and session authentication state.
     pub account: AccountSettings,
+    /// Cached high scores map by mode key.
     #[serde(default)]
     pub high_scores: HashMap<String, f32>,
 }
 
+/// Theme preferences and color specifications.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThemeSettings {
+    /// Active theme identifier.
     pub id: ThemeId,
+    /// Human-readable theme name.
     pub name: String,
+    /// Hex-encoded accent color string (e.g., "#818cf8").
     pub accent_hex: String,
+    /// Optional user-specified custom accent override hex string.
     #[serde(default)]
     pub custom_accent: Option<String>,
 }
 
+/// Caret geometry, kinetics, and bloom glow preferences.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaretSettings {
+    /// Geometry rendering mode (Line, Bar, Block, Underline).
     pub style: CaretStyle,
+    /// Base thickness/width in pixels.
     pub width: f32,
+    /// Spring response smoothness constant in seconds.
     pub smoothness: f32,
+    /// Multiplier for layered bloom glow intensity (0.0 to 1.0).
     pub glow_intensity: f32,
 }
 
+/// Typography scale preferences.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypographySettings {
+    /// Typing test font size in points.
     pub font_size: f32,
 }
 
+/// Visual feedback and HUD telemetry options.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisualSettings {
+    /// Toggles keystroke particle burst effects.
     pub particles_enabled: bool,
+    /// Toggles dynamic screen shake on errors or typing bursts.
     pub screen_shake_enabled: bool,
+    /// Toggles live real-time WPM readout counter.
     pub show_live_wpm: bool,
+    /// Toggles the interactive velocity telemetry graph.
     pub show_velocity_graph: bool,
 }
 
+/// Keypress sound synthesis preferences.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioSettings {
+    /// Master toggle for typing sound synthesis.
     pub sound_enabled: bool,
+    /// Master volume level (0.0 to 1.0).
     pub sound_volume: f32,
+    /// Active mechanical switch profile (Mechanical, Cream, Typewriter, etc.).
     pub sound_preset: SoundPreset,
 }
 
+/// Default practice session mode and durations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameplaySettings {
+    /// Default game mode on launch (Timed or Words).
     pub default_mode: GameMode,
+    /// Target duration for timed sessions (25s or 40s).
     pub default_duration: TimedDuration,
+    /// Target word count for word sessions (25w or 40w).
     pub default_word_count: WordCountTarget,
+    /// Whether to record anonymous guest sessions into SQLite database history.
     pub persist_guest_sessions: bool,
 }
 
+/// User profile linkage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountSettings {
+    /// Currently signed-in user ID in local SQLite database.
     pub active_user_id: Option<i64>,
 }
 

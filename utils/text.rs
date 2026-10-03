@@ -1,11 +1,23 @@
-/// Text sanitization and utility functions.
+//! Text normalization, Unicode sanitization, and database query escaping utilities.
+//!
+//! When users paste literature from Project Gutenberg, online books, or rich text editors,
+//! text frequently contains typographical embellishments:
+//! - Curved or curly quotes (“ ” „ ‟ « ») that do not match the keyboard's straight double-quote key (`"`).
+//! - Typographic apostrophes and primes (‘ ’ ‚ ‛ ′) that do not match the standard single-quote key (`'`).
+//! - Em dashes (—) and en dashes (–) instead of standard hyphens (`-`).
+//! - Non-breaking spaces (`\u{00A0}`), zero-width joiners, or byte-order marks (`\u{FEFF}`)
+//!   which cause typing engines to silently fail or register phantom errors.
+//!
+//! [`sanitize_text`] cleans and standardizes these variations into canonical ASCII forms.
 
-/// Sanitizes pasted or edited text:
-/// - Strips zero-width and invisible characters (\u{200B}, \u{200C}, \u{200D}, \u{FEFF})
-/// - Normalizes smart single/double quotes to straight quotes
-/// - Normalizes typographic dashes
-/// - Collapses multiple whitespace characters into single spaces
-/// - Trims leading and trailing whitespace
+/// Sanitizes and canonicalizes pasted or generated text for the typing engine:
+/// - Strips invisible zero-width and directional control characters (`\u{200B}`, `\u{FEFF}`, etc.).
+/// - Normalizes smart single quotes, accents, and primes (`‘`, `’`, `‚`, `‛`, `′`, `´`) to `'`.
+/// - Normalizes smart double quotes, guillemets, and low quotes (`“`, `”`, `„`, `‟`, `«`, `»`, `″`) to `"`.
+/// - Normalizes em dashes, en dashes, figure dashes, and minus signs (`—`, `–`, `―`, `‒`, `−`) to `-`.
+/// - Expands typographic ellipses (`…`) to three periods (`...`).
+/// - Converts all non-standard whitespace (tabs, newlines, NBSP, ideographic spaces) to standard spaces.
+/// - Collapses multiple consecutive spaces into a single space and trims whitespace from both ends.
 pub fn sanitize_text(input: &str) -> String {
     let mut cleaned = String::with_capacity(input.len());
 
