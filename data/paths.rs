@@ -1,30 +1,69 @@
-use directories::ProjectDirs;
+use directories::BaseDirs;
 use std::path::PathBuf;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "velotype";
-const APPLICATION: &str = "velotype";
-
-/// Resolves the OS-specific application data directory using the directories crate.
+/// Resolves the application data directory: `appData/typingforge`.
 /// Creates the directory if it does not already exist.
 pub fn app_data_dir() -> PathBuf {
-    let proj_dirs = ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION)
-        .expect("Failed to determine OS project directories");
-    let data_dir = proj_dirs.data_dir();
+    let dir = if let Some(base) = BaseDirs::new() {
+        base.data_dir().join("typingforge")
+    } else if let Some(proj) = directories::ProjectDirs::from("", "", "typingforge") {
+        proj.data_dir().to_path_buf()
+    } else {
+        PathBuf::from("typingforge_data")
+    };
 
-    if !data_dir.exists() {
-        let _ = std::fs::create_dir_all(data_dir);
+    if !dir.exists() {
+        let _ = std::fs::create_dir_all(&dir);
     }
 
-    data_dir.to_path_buf()
+    dir
 }
 
-/// Resolves the absolute path to the SQLite database file.
+/// Resolves the absolute path to the SQLite database file: `appData/typingforge/typingforge.db`
 pub fn db_path() -> PathBuf {
-    app_data_dir().join("velotype.db")
+    let new_path = app_data_dir().join("typingforge.db");
+
+    // Seamless migration from legacy locations if new database file doesn't exist yet
+    if !new_path.exists() {
+        // 1. Check legacy velotype.db in current typingforge directory
+        let legacy_in_current = app_data_dir().join("velotype.db");
+        if legacy_in_current.exists() {
+            let _ = std::fs::copy(&legacy_in_current, &new_path);
+        } else if let Some(proj) = directories::ProjectDirs::from("com", "velotype", "velotype") {
+            // 2. Check old com/velotype/velotype/data/velotype.db
+            let old_db = proj.data_dir().join("velotype.db");
+            if old_db.exists() {
+                let _ = std::fs::copy(&old_db, &new_path);
+            }
+        }
+    }
+
+    new_path
 }
 
-/// Resolves the absolute path to the JSON configuration file.
+/// Resolves the absolute path to the JSON configuration file: `appData/typingforge/setting.json`
 pub fn config_path() -> PathBuf {
-    app_data_dir().join("config.json")
+    let new_path = app_data_dir().join("setting.json");
+
+    // Seamless migration from legacy config.json if setting.json doesn't exist yet
+    if !new_path.exists() {
+        // 1. Check legacy config.json in typingforge directory
+        let legacy_in_current = app_data_dir().join("config.json");
+        if legacy_in_current.exists() {
+            let _ = std::fs::copy(&legacy_in_current, &new_path);
+        } else if let Some(proj) = directories::ProjectDirs::from("com", "velotype", "velotype") {
+            // 2. Check old com/velotype/velotype/data/config.json
+            let old_config = proj.data_dir().join("config.json");
+            if old_config.exists() {
+                let _ = std::fs::copy(&old_config, &new_path);
+            }
+        }
+    }
+
+    new_path
+}
+
+/// Alias for `config_path`, pointing to `appData/typingforge/setting.json`.
+pub fn settings_path() -> PathBuf {
+    config_path()
 }

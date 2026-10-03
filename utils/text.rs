@@ -11,24 +11,28 @@ pub fn sanitize_text(input: &str) -> String {
 
     for ch in input.chars() {
         match ch {
-            // Strip zero-width and byte-order-mark characters
-            '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{FEFF}' | '\u{2060}' | '\u{00AD}' => {
+            // Strip zero-width, byte-order-mark, and directional characters
+            '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{FEFF}' | '\u{2060}' | '\u{00AD}' | '\u{200E}' | '\u{200F}' => {
                 // Skip completely
             }
-            // Normalize single smart quotes / backticks / apostrophes
-            '\u{2018}' | '\u{2019}' | '\u{201B}' | '`' | '´' => {
+            // Normalize single smart quotes / backticks / apostrophes / primes
+            '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}' | '`' | '´' | '\u{2032}' | '\u{2039}' | '\u{203A}' | '\u{FF07}' | '\u{055A}' | '\u{275B}' | '\u{275C}' => {
                 cleaned.push('\'');
             }
-            // Normalize double smart quotes / guillemets
-            '\u{201C}' | '\u{201D}' | '\u{201F}' | '«' | '»' => {
+            // Normalize double smart quotes / guillemets / primes / low quotes
+            '\u{201C}' | '\u{201D}' | '\u{201E}' | '\u{201F}' | '«' | '»' | '\u{2033}' | '\u{02DD}' | '\u{FF02}' | '\u{275D}' | '\u{275E}' => {
                 cleaned.push('"');
             }
             // Normalize typographic dashes to standard hyphens
-            '—' | '–' | '―' => {
+            '—' | '–' | '―' | '‒' | '−' => {
                 cleaned.push('-');
             }
-            // Normalize line breaks and tabs to spaces
-            '\r' | '\n' | '\t' => {
+            // Normalize typographic ellipsis
+            '…' => {
+                cleaned.push_str("...");
+            }
+            // Normalize non-standard spaces and line breaks to standard space
+            '\r' | '\n' | '\t' | '\u{00A0}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{2000}'..='\u{200A}' => {
                 cleaned.push(' ');
             }
             other => {
@@ -79,6 +83,13 @@ mod tests {
         let raw = "\u{FEFF}“Hello\u{200B} ‘world’!”   How’s it—going?   ";
         let cleaned = sanitize_text(raw);
         assert_eq!(cleaned, "\"Hello 'world'!\" How's it-going?");
+    }
+
+    #[test]
+    fn test_sanitize_various_quotes_and_symbols() {
+        let raw = "„German quotes“ and «French quotes» and ″primes″ and ‚single low‛…";
+        let cleaned = sanitize_text(raw);
+        assert_eq!(cleaned, "\"German quotes\" and \"French quotes\" and \"primes\" and 'single low'...");
     }
 
     #[test]

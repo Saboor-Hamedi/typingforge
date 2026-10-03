@@ -1,6 +1,6 @@
 [package]
 name = "forgetyping"
-version = "0.1.14"
+version = "0.1.15"
 edition = "2021"
 authors = ["Saboor Hamedi <saboorhamedi49@gmail.com>"]
 description = "A kinetic, ultra-juicy desktop typing game with spring caret physics and real-time velocity graph"
@@ -17,6 +17,10 @@ path = "main.rs"
 [[bin]]
 name = "publish"
 path = "bin/publish.rs"
+
+[[bin]]
+name = "generate_text"
+path = "bin/generate_text.rs"
 
 [dependencies]
 eframe = { version = "0.29", default-features = false, features = [

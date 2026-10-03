@@ -866,6 +866,95 @@ impl DbQueries {
             Ok(())
         })
     }
+
+    /// Bulk inserts generated or imported passages in a high-performance single transaction
+    pub fn insert_passages_batch(
+        db: &DatabaseConnection,
+        passages: &[(&str, &str, bool)],
+    ) -> Result<usize> {
+        let now = chrono::Utc::now().timestamp();
+        db.with_conn(|conn| {
+            let tx = conn.transaction()?;
+            {
+                let mut insert_stmt = tx.prepare(
+                    "INSERT INTO passages (text_content, word_count, category, is_custom, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                )?;
+                let mut fts_stmt = tx.prepare(
+                    "INSERT INTO passages_fts (rowid, text_content, category) VALUES (?1, ?2, ?3)",
+                )?;
+
+                for (text, category, is_custom) in passages {
+                    let word_count = text.split_whitespace().count() as i64;
+                    insert_stmt.execute(params![text, word_count, category, *is_custom as i64, now])?;
+                    let id = tx.last_insert_rowid();
+                    let _ = fts_stmt.execute(params![id, text, category]);
+                }
+            }
+            tx.commit()?;
+            Ok(passages.len())
+        })
+    }
+
+    /// Normalizes existing database passages and texts: replaces smart/curly quotes,
+    /// strange symbols, typographic dashes, and excess whitespace into standard forms.
+    pub fn normalize_existing_passages(db: &DatabaseConnection) -> Result<usize> {
+        db.with_conn(|conn| {
+            let tx = conn.transaction()?;
+            let mut modified = 0usize;
+            {
+                // 1. Normalize passages table
+                let mut select_stmt = tx.prepare("SELECT id, text_content, category FROM passages")?;
+                let rows: Vec<(i64, String, String)> = select_stmt
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let mut update_stmt = tx.prepare(
+                    "UPDATE passages SET text_content = ?1, word_count = ?2 WHERE id = ?3",
+                )?;
+                let mut fts_update = tx.prepare(
+                    "UPDATE passages_fts SET text_content = ?1 WHERE rowid = ?2",
+                )?;
+
+                for (id, content, _cat) in rows {
+                    let normalized = crate::utils::text::sanitize_text(&content);
+                    if normalized != content {
+                        let word_count = normalized.split_whitespace().count() as i64;
+                        update_stmt.execute(params![normalized, word_count, id])?;
+                        let _ = fts_update.execute(params![normalized, id]);
+                        modified += 1;
+                    }
+                }
+
+                // 2. Normalize texts table
+                let mut select_texts = tx.prepare("SELECT id, content FROM texts")?;
+                let text_rows: Vec<(i64, String)> = select_texts
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let mut update_text = tx.prepare(
+                    "UPDATE texts SET content = ?1, char_count = ?2 WHERE id = ?3",
+                )?;
+                let mut fts_text_update = tx.prepare(
+                    "UPDATE texts_fts SET content = ?1 WHERE rowid = ?2",
+                )?;
+
+                for (id, content) in text_rows {
+                    let normalized = crate::utils::text::sanitize_text(&content);
+                    if normalized != content {
+                        let char_count = normalized.chars().count() as i64;
+                        update_text.execute(params![normalized, char_count, id])?;
+                        let _ = fts_text_update.execute(params![normalized, id]);
+                        modified += 1;
+                    }
+                }
+            }
+            tx.commit()?;
+            Ok(modified)
+        })
+    }
 }
 
 #[cfg(test)]

@@ -35,6 +35,7 @@ pub struct VelotypeApp {
     pb_banner_timer: f32,
     was_focused: bool,
     is_profile_dropdown_open: bool,
+    last_saved_config: AppConfig,
 }
 
 impl VelotypeApp {
@@ -79,6 +80,8 @@ impl VelotypeApp {
             None
         };
 
+        let last_saved_config = config.clone();
+
         let mut app = Self {
             config,
             engine: GameEngine::new(session_config),
@@ -97,6 +100,7 @@ impl VelotypeApp {
             pb_banner_timer: 0.0,
             was_focused: true,
             is_profile_dropdown_open: false,
+            last_saved_config,
         };
         app.restart_game();
         app
@@ -266,6 +270,7 @@ impl VelotypeApp {
                 i.consume_key(egui::Modifiers::COMMAND, Key::Comma);
             });
             if self.current_screen == AppScreen::Settings {
+                ConfigLoader::save(&self.config);
                 self.current_screen = AppScreen::Typing;
             } else {
                 self.current_screen = AppScreen::Settings;
@@ -296,6 +301,7 @@ impl VelotypeApp {
 
         if esc_pressed {
             if self.current_screen == AppScreen::Settings || self.current_screen == AppScreen::Editor {
+                ConfigLoader::save(&self.config);
                 self.current_screen = AppScreen::Typing;
             } else if self.current_screen == AppScreen::Results {
                 self.restart_game();
@@ -394,6 +400,12 @@ impl eframe::App for VelotypeApp {
         self.audio.enabled = self.config.sound_enabled;
         self.audio.volume = self.config.sound_volume;
         self.audio.sound_preset = self.config.sound_preset;
+
+        // Automatically persist settings immediately whenever any configuration value is modified
+        if self.config != self.last_saved_config {
+            ConfigLoader::save(&self.config);
+            self.last_saved_config = self.config.clone();
+        }
 
         let theme = Theme::get(self.config.theme);
         let shake_offset = self.shake.current_offset();
@@ -752,5 +764,9 @@ impl eframe::App for VelotypeApp {
         }
 
         ctx.request_repaint();
+    }
+
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        ConfigLoader::save(&self.config);
     }
 }

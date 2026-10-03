@@ -4,7 +4,10 @@ use crate::ui::components::{ButtonVariant, UnifiedButton, UnifiedInput};
 use crate::ui::confirm::ConfirmModal;
 use crate::ui::theme::Theme;
 use crate::utils::text::sanitize_text;
+use crate::utils::text_generator::TextGenerator;
 use egui::{Color32, Frame, RichText, Sense, Stroke, Vec2};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
 pub struct CustomPassageRequest {
@@ -18,6 +21,13 @@ pub struct CustomPassageRequest {
 pub enum PassageCreationMode {
     Words,
     Time,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum GeneratorStatus {
+    Idle,
+    Success(String),
+    Error(String),
 }
 
 fn get_smart_passage_title(passage: &DbPassage) -> String {
@@ -54,6 +64,16 @@ pub struct CustomTextsTabState {
     pub limit_notice: Option<String>,
     pub text_to_delete: Option<(i64, String)>,
     pub editing_passage_id: Option<i64>,
+
+    // Bulk text generator state
+    pub generate_count_input: String,
+    pub generate_error: Option<String>,
+    pub generate_success: Option<String>,
+    pub is_generating: Arc<AtomicBool>,
+    pub generate_progress: Arc<AtomicUsize>,
+    pub generate_total: Arc<AtomicUsize>,
+    pub generate_cancel: Arc<AtomicBool>,
+    pub generator_status: Arc<Mutex<GeneratorStatus>>,
 }
 
 impl Default for CustomTextsTabState {
@@ -69,6 +89,14 @@ impl Default for CustomTextsTabState {
             limit_notice: None,
             text_to_delete: None,
             editing_passage_id: None,
+            generate_count_input: "50".to_string(),
+            generate_error: None,
+            generate_success: None,
+            is_generating: Arc::new(AtomicBool::new(false)),
+            generate_progress: Arc::new(AtomicUsize::new(0)),
+            generate_total: Arc::new(AtomicUsize::new(0)),
+            generate_cancel: Arc::new(AtomicBool::new(false)),
+            generator_status: Arc::new(Mutex::new(GeneratorStatus::Idle)),
         }
     }
 }
@@ -518,11 +546,213 @@ impl CustomTextsTab {
                 }
             });
 
-            // Clean gap-6 between Create card and Library card
+            // Clean gap-6 between Create card and Generator card
             ui.add_space(24.0);
 
             // ─────────────────────────────────────────────────────────────
-            // 2. SAVED PASSAGES LIBRARY (With SQLite & FTS5 search)
+            // 2. BULK LITERATURE TEXT GENERATOR & NORMALIZER (Ported from generateText.py)
+            // ─────────────────────────────────────────────────────────────
+            let gen_frame = Frame::none()
+                .fill(theme.bg_surface)
+                .stroke(Stroke::new(1.0, theme.border))
+                .rounding(10.0)
+                .inner_margin(egui::Margin::same(pad));
+
+            gen_frame.show(ui, |ui| {
+                ui.set_min_width(inner_w);
+                ui.set_max_width(inner_w);
+
+                // Drain any completed background generator status
+                {
+                    let mut st = state.generator_status.lock().unwrap();
+                    match std::mem::replace(&mut *st, GeneratorStatus::Idle) {
+                        GeneratorStatus::Success(msg) => {
+                            state.generate_success = Some(msg);
+                            state.generate_error = None;
+                        }
+                        GeneratorStatus::Error(err) => {
+                            state.generate_error = Some(err);
+                            state.generate_success = None;
+                        }
+                        GeneratorStatus::Idle => {}
+                    }
+                }
+
+                ui.label(
+                    RichText::new("Bulk Literature Text Generator & Normalizer")
+                        .color(theme.text_active)
+                        .strong()
+                        .size(12.0)
+                        .monospace(),
+                );
+                ui.add_space(3.0);
+                ui.label(
+                    RichText::new("Generate authentic 25 & 40-word prose and quotes directly from classic literature. Automatically normalizes quotes (\"\" '' «» ″ → \") and special symbols into clean, standard database records.")
+                        .color(theme.text_dim)
+                        .size(11.0)
+                        .monospace(),
+                );
+                ui.add_space(14.0);
+
+                // Beautiful input styled identically to the Login Input
+                let inner_w = ui.available_width();
+                ui.label(RichText::new("NUMBER OF PASSAGES TO GENERATE").color(theme.text_dim).size(10.5).monospace());
+                ui.add_space(4.0);
+                UnifiedInput::singleline(
+                    ui,
+                    &mut state.generate_count_input,
+                    "e.g. 10, 50, 500, 5000, 10000000",
+                    theme,
+                    inner_w,
+                );
+
+                ui.add_space(10.0);
+
+                // Error feedback banner (matching profile login error style)
+                if let Some(err) = &state.generate_error {
+                    let err_frame = Frame::none()
+                        .fill(Color32::from_rgba_unmultiplied(239, 68, 68, 25))
+                        .stroke(Stroke::new(1.0, Color32::from_rgb(239, 68, 68)))
+                        .rounding(6.0)
+                        .inner_margin(egui::Margin::symmetric(10.0, 6.0));
+                    err_frame.show(ui, |ui| {
+                        ui.label(
+                            RichText::new(format!("⚠  {err}"))
+                                .color(Color32::from_rgb(255, 92, 92))
+                                .size(11.5)
+                                .monospace(),
+                        );
+                    });
+                    ui.add_space(10.0);
+                }
+
+                // Success feedback banner (matching profile login success style)
+                if let Some(msg) = &state.generate_success {
+                    let ok_frame = Frame::none()
+                        .fill(Color32::from_rgba_unmultiplied(16, 185, 129, 25))
+                        .stroke(Stroke::new(1.0, Color32::from_rgb(16, 185, 129)))
+                        .rounding(6.0)
+                        .inner_margin(egui::Margin::symmetric(10.0, 6.0));
+                    ok_frame.show(ui, |ui| {
+                        ui.label(
+                            RichText::new(format!("✓  {msg}"))
+                                .color(Color32::from_rgb(52, 211, 153))
+                                .size(11.5)
+                                .monospace(),
+                        );
+                    });
+                    ui.add_space(10.0);
+                }
+
+                let is_gen = state.is_generating.load(Ordering::Relaxed);
+                if is_gen {
+                    let done = state.generate_progress.load(Ordering::Relaxed);
+                    let total = state.generate_total.load(Ordering::Relaxed);
+
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(format!("Generating & normalizing passages... ({done} / {total} created)"))
+                                .color(theme.accent)
+                                .strong()
+                                .monospace()
+                                .size(11.5),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if UnifiedButton::show(ui, "Cancel", ButtonVariant::Danger, theme, 75.0).clicked() {
+                                state.generate_cancel.store(true, Ordering::Relaxed);
+                            }
+                        });
+                    });
+
+                    ui.add_space(6.0);
+                    let progress = if total > 0 { (done as f32 / total as f32).clamp(0.0, 1.0) } else { 0.0 };
+                    let (prog_rect, _) = ui.allocate_exact_size(Vec2::new(inner_w, 4.0), Sense::hover());
+                    ui.painter().rect_filled(prog_rect, 2.0, theme.border);
+                    if progress > 0.0 {
+                        let filled_w = prog_rect.width() * progress;
+                        ui.painter().rect_filled(
+                            egui::Rect::from_min_size(prog_rect.min, Vec2::new(filled_w, 4.0)),
+                            2.0,
+                            theme.accent,
+                        );
+                    }
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(60));
+                    ui.add_space(8.0);
+                } else {
+                    // Action Buttons Row
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(10.0, 0.0);
+
+                        // 1. Primary Action: Generate & Insert into Database
+                        if UnifiedButton::show(ui, "⚡ Generate to Database", ButtonVariant::Primary, theme, 185.0).clicked() {
+                            let raw_str = state.generate_count_input.trim();
+                            let clean_str: String = raw_str.chars().filter(|c| c.is_ascii_digit()).collect();
+
+                            match clean_str.parse::<usize>() {
+                                Ok(count) if count > 0 => {
+                                    state.generate_error = None;
+                                    state.generate_success = None;
+                                    state.generate_progress.store(0, Ordering::Relaxed);
+                                    state.generate_total.store(count, Ordering::Relaxed);
+                                    state.generate_cancel.store(false, Ordering::Relaxed);
+                                    state.is_generating.store(true, Ordering::Relaxed);
+
+                                    let is_gen_arc = Arc::clone(&state.is_generating);
+                                    let prog_arc = Arc::clone(&state.generate_progress);
+                                    let cancel_arc = Arc::clone(&state.generate_cancel);
+                                    let status_arc = Arc::clone(&state.generator_status);
+                                    let db_clone = db.clone();
+
+                                    std::thread::spawn(move || {
+                                        match TextGenerator::generate_into_database(
+                                            &db_clone,
+                                            count,
+                                            Some(prog_arc),
+                                            Some(cancel_arc),
+                                        ) {
+                                            Ok(n) => {
+                                                *status_arc.lock().unwrap() = GeneratorStatus::Success(
+                                                    format!("Successfully generated and inserted {n} normalized passages into database!"),
+                                                );
+                                            }
+                                            Err(e) => {
+                                                *status_arc.lock().unwrap() = GeneratorStatus::Error(e);
+                                            }
+                                        }
+                                        is_gen_arc.store(false, Ordering::Relaxed);
+                                    });
+                                }
+                                _ => {
+                                    state.generate_error = Some("Please enter a valid positive number (e.g. 10, 50, 500, 5000, 10000000).".to_string());
+                                    state.generate_success = None;
+                                }
+                            }
+                        }
+
+                        // 2. Secondary Action: Normalize all existing database passages
+                        if UnifiedButton::show(ui, "✨ Normalize Existing Passages", ButtonVariant::Secondary, theme, 220.0).clicked() {
+                            match DbQueries::normalize_existing_passages(db) {
+                                Ok(n) => {
+                                    state.generate_success = Some(format!("Processed library: cleaned and normalized {n} passages with standard quotes & symbols."));
+                                    state.generate_error = None;
+                                }
+                                Err(e) => {
+                                    state.generate_error = Some(format!("Failed to normalize database passages: {e}"));
+                                    state.generate_success = None;
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+
+            // Clean gap-6 between Generator card and Library card
+            ui.add_space(24.0);
+
+            // ─────────────────────────────────────────────────────────────
+            // 3. SAVED PASSAGES LIBRARY (With SQLite & FTS5 search)
             // ─────────────────────────────────────────────────────────────
             let list_frame = Frame::none()
                 .fill(theme.bg_surface)
