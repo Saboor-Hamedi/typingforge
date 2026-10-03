@@ -1,0 +1,502 @@
+use super::metrics::LiveMetrics;
+use crate::game::stats::{KeystrokeRecord, SessionStats, VelocityPoint};
+use crate::game::text::{CharStatus, DisplayChar, TextGenerator};
+use std::collections::VecDeque;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum GameMode {
+    Timed,
+    Words,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TimedDuration {
+    Sec25 = 25,
+    Sec40 = 40,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum WordCountTarget {
+    Words25 = 25,
+    Words40 = 40,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameState {
+    Idle,
+    Running,
+    Completed,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionConfig {
+    pub mode: GameMode,
+    pub timed_duration: TimedDuration,
+    pub word_target: WordCountTarget,
+    pub include_punctuation: bool,
+    pub include_numbers: bool,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            mode: GameMode::Timed,
+            timed_duration: TimedDuration::Sec25,
+            word_target: WordCountTarget::Words25,
+            include_punctuation: false,
+            include_numbers: false,
+        }
+    }
+}
+
+pub struct GameEngine {
+    pub config: SessionConfig,
+    pub state: GameState,
+    pub words: Vec<Vec<DisplayChar>>,
+    pub current_word: usize,
+    pub current_char: usize,
+
+    pub start_time: Option<f64>,
+    pub elapsed_time: f32,
+    pub remaining_time: f32,
+
+    pub streak: usize,
+    pub max_streak: usize,
+    pub streak_milestone_hit: Option<usize>,
+
+    pub live_metrics: LiveMetrics,
+
+    // Keystroke timestamp queue for instant velocity
+    recent_keystroke_times: VecDeque<f32>,
+    pub last_keystroke_time: f32,
+
+    pub stats: SessionStats,
+    pub has_error_shake: bool,
+    pub custom_passage_active: bool,
+}
+
+impl GameEngine {
+    pub fn new(config: SessionConfig) -> Self {
+        let mut engine = Self {
+            config: config.clone(),
+            state: GameState::Idle,
+            words: Vec::new(),
+            current_word: 0,
+            current_char: 0,
+            start_time: None,
+            elapsed_time: 0.0,
+            remaining_time: config.timed_duration as usize as f32,
+            streak: 0,
+            max_streak: 0,
+            streak_milestone_hit: None,
+            live_metrics: LiveMetrics::new(),
+            recent_keystroke_times: VecDeque::with_capacity(32),
+            last_keystroke_time: 0.0,
+            stats: SessionStats::default(),
+            has_error_shake: false,
+            custom_passage_active: false,
+        };
+        engine.reset();
+        engine
+    }
+
+    pub fn reset(&mut self) {
+        self.state = GameState::Idle;
+        self.current_word = 0;
+        self.current_char = 0;
+        self.start_time = None;
+        self.elapsed_time = 0.0;
+        self.remaining_time = match self.config.mode {
+            GameMode::Timed => self.config.timed_duration as usize as f32,
+            _ => 0.0,
+        };
+        self.streak = 0;
+        self.max_streak = 0;
+        self.streak_milestone_hit = None;
+        self.live_metrics.reset();
+        self.recent_keystroke_times.clear();
+        self.last_keystroke_time = 0.0;
+        self.stats = SessionStats::default();
+        self.has_error_shake = false;
+        self.custom_passage_active = false;
+
+        let word_count = match self.config.mode {
+            GameMode::Words => self.config.word_target as usize,
+            GameMode::Timed => 120,
+        };
+
+        let generated = TextGenerator::generate_words(
+            word_count,
+            self.config.include_punctuation,
+            self.config.include_numbers,
+        );
+
+        self.words = generated
+            .into_iter()
+            .map(|w| w.chars().map(DisplayChar::new).collect())
+            .collect();
+    }
+
+    /// Loads passage text (from database or custom input)
+    pub fn load_passage_text(&mut self, text: &str, is_custom: bool) {
+        self.reset();
+        self.custom_passage_active = is_custom;
+
+        let words: Vec<Vec<DisplayChar>> = text
+            .split_whitespace()
+            .map(|word| word.chars().map(DisplayChar::new).collect())
+            .collect();
+
+        if !words.is_empty() {
+            self.words = words;
+        }
+    }
+
+    /// Loads custom passage (from editor paste or user creation)
+    pub fn load_passage(&mut self, text: &str) {
+        self.load_passage_text(text, true);
+    }
+
+    pub fn load_passage_with_mode(
+        &mut self,
+        text: &str,
+        mode: GameMode,
+        word_target: Option<WordCountTarget>,
+        timed_duration: Option<TimedDuration>,
+    ) {
+        self.config.mode = mode;
+        if let Some(wt) = word_target {
+            self.config.word_target = wt;
+        }
+        if let Some(td) = timed_duration {
+            self.config.timed_duration = td;
+        }
+        self.load_passage(text);
+    }
+
+    pub fn update(&mut self, dt: f32) {
+        // Decay character animations
+        for word in &mut self.words {
+            for ch in word.iter_mut() {
+                if ch.pop_anim > 0.0 {
+                    ch.pop_anim = (ch.pop_anim - dt * 6.0).max(0.0);
+                }
+            }
+        }
+
+        if self.state != GameState::Running {
+            return;
+        }
+
+        self.elapsed_time += dt;
+
+        // Drain older keystrokes from rolling window (> 1.2s)
+        while let Some(&t) = self.recent_keystroke_times.front() {
+            if self.elapsed_time - t > 1.2 {
+                self.recent_keystroke_times.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        // Calculate instantaneous velocity
+        let mut instant_wpm = 0.0;
+        if self.recent_keystroke_times.len() >= 2 {
+            let count = self.recent_keystroke_times.len();
+            let window_duration = (self.elapsed_time - self.recent_keystroke_times[0]).max(0.1);
+            let instant_words = (count as f32) / 5.0;
+            instant_wpm = (instant_words / (window_duration / 60.0)).clamp(0.0, 300.0);
+        }
+
+        // Calculate cumulative WPM & accuracy
+        let (net, raw) = SessionStats::calculate_wpm(
+            self.stats.correct_keystrokes,
+            self.stats.total_keystrokes,
+            self.elapsed_time,
+        );
+        let acc = SessionStats::calculate_accuracy(
+            self.stats.correct_keystrokes,
+            self.stats.total_keystrokes,
+        );
+
+        // Update live metrics & EMA smoothing throttled every 150ms
+        self.live_metrics.update_keystroke(net, raw, acc, instant_wpm);
+        self.live_metrics.update_frame(self.elapsed_time, dt);
+
+        // Record velocity data point every 0.15s for the real-time velocity graph
+        let should_record = self
+            .stats
+            .velocity_history
+            .last()
+            .map(|p| self.elapsed_time - p.time_secs >= 0.15)
+            .unwrap_or(true);
+
+        if should_record {
+            self.stats.velocity_history.push(VelocityPoint {
+                time_secs: self.elapsed_time,
+                net_wpm: net,
+                raw_wpm: raw,
+                instant_wpm,
+                is_error: self.has_error_shake,
+            });
+            self.has_error_shake = false;
+        }
+
+        // Handle Mode End Conditions
+        let is_last_word_done = !self.words.is_empty()
+            && self.current_word == self.words.len() - 1
+            && self.current_char >= self.words[self.current_word].len();
+
+        if self.custom_passage_active {
+            if self.current_word >= self.words.len() || is_last_word_done {
+                self.complete();
+            } else if self.config.mode == GameMode::Timed {
+                self.remaining_time = (self.config.timed_duration as usize as f32 - self.elapsed_time).max(0.0);
+                if self.remaining_time <= 0.0 {
+                    self.complete();
+                }
+            }
+        } else {
+            match self.config.mode {
+                GameMode::Timed => {
+                    self.remaining_time = (self.config.timed_duration as usize as f32 - self.elapsed_time).max(0.0);
+                    if self.remaining_time <= 0.0 {
+                        self.complete();
+                    }
+                }
+                GameMode::Words => {
+                    if self.current_word >= self.words.len() || is_last_word_done {
+                        self.complete();
+                    }
+                }
+            }
+        }
+
+    }
+
+    pub fn calculate_current_position(&self) -> usize {
+        let mut pos = 0;
+        for w in 0..self.current_word.min(self.words.len()) {
+            pos += self.words[w].len() + 1;
+        }
+        pos + self.current_char
+    }
+
+    pub fn handle_char(&mut self, c: char) -> bool {
+        if self.state == GameState::Completed {
+            return false;
+        }
+        if self.state == GameState::Idle {
+            self.state = GameState::Running;
+            self.last_keystroke_time = self.elapsed_time;
+        }
+
+        let latency_ms = ((self.elapsed_time - self.last_keystroke_time) * 1000.0).max(0.0) as i64;
+        self.last_keystroke_time = self.elapsed_time;
+
+        let mut is_correct = false;
+        self.stats.total_keystrokes += 1;
+        self.recent_keystroke_times.push_back(self.elapsed_time);
+        let pos = self.calculate_current_position();
+
+        if c == ' ' {
+            // Space advances to next word
+            if self.current_word < self.words.len() {
+                let word = &mut self.words[self.current_word];
+                for ch_idx in self.current_char..word.len() {
+                    if word[ch_idx].status == CharStatus::Pending {
+                        word[ch_idx].status = CharStatus::Incorrect;
+                        self.stats.incorrect_keystrokes += 1;
+                    }
+                }
+                self.current_word += 1;
+                self.current_char = 0;
+                self.stats.correct_keystrokes += 1;
+                is_correct = true;
+                self.stats.keystroke_log.push(KeystrokeRecord {
+                    expected_char: ' ',
+                    actual_char: ' ',
+                    is_correct: true,
+                    latency_ms,
+                    position: pos,
+                });
+            }
+        } else if self.current_word < self.words.len() {
+            let word = &mut self.words[self.current_word];
+            if self.current_char < word.len() {
+                let expected = word[self.current_char].expected;
+
+                if expected == c {
+                    word[self.current_char].status = CharStatus::Correct;
+                    word[self.current_char].typed = Some(c);
+                    word[self.current_char].pop_anim = 1.0;
+                    self.stats.correct_keystrokes += 1;
+                    self.streak += 1;
+                    if self.streak > self.max_streak {
+                        self.max_streak = self.streak;
+                    }
+                    if self.streak == 10 || self.streak == 25 || self.streak == 50 || self.streak == 100 || self.streak == 200 {
+                        self.streak_milestone_hit = Some(self.streak);
+                    }
+                    is_correct = true;
+
+                    self.stats.keystroke_log.push(KeystrokeRecord {
+                        expected_char: expected,
+                        actual_char: c,
+                        is_correct: true,
+                        latency_ms,
+                        position: pos,
+                    });
+
+                    // Advance caret on correct keystroke
+                    self.current_char += 1;
+                } else {
+                    word[self.current_char].status = CharStatus::Incorrect;
+                    word[self.current_char].typed = Some(c);
+                    self.stats.incorrect_keystrokes += 1;
+                    self.on_mistake(expected);
+
+                    self.stats.keystroke_log.push(KeystrokeRecord {
+                        expected_char: expected,
+                        actual_char: c,
+                        is_correct: false,
+                        latency_ms,
+                        position: pos,
+                    });
+
+                    // Advance caret on typo so the typing flow keeps moving naturally
+                    self.current_char += 1;
+                }
+            }
+        }
+
+        // Check if finished:
+        // Automatically complete the test immediately once the last letter of the last word
+        // is typed, without requiring the user to press space!
+        let is_last_word_done = !self.words.is_empty()
+            && self.current_word == self.words.len() - 1
+            && self.current_char >= self.words[self.current_word].len();
+
+        if self.current_word >= self.words.len() || is_last_word_done {
+            self.complete();
+        }
+
+        is_correct
+    }
+
+    pub fn handle_backspace(&mut self, ctrl: bool) {
+        if self.state != GameState::Running {
+            return;
+        }
+
+        if ctrl {
+            // Delete whole word back to start of word
+            if self.current_word < self.words.len() {
+                let word = &mut self.words[self.current_word];
+                let limit = self.current_char.min(word.len());
+                for i in 0..limit {
+                    word[i].status = CharStatus::Pending;
+                    word[i].typed = None;
+                }
+                self.current_char = 0;
+            }
+        } else if self.current_word < self.words.len() {
+            let word = &mut self.words[self.current_word];
+            if self.current_char > 0 {
+                self.current_char -= 1;
+                word[self.current_char].status = CharStatus::Pending;
+                word[self.current_char].typed = None;
+            } else if self.current_word > 0 {
+                // Step back into previous word
+                self.current_word -= 1;
+                self.current_char = self.words[self.current_word].len();
+                if self.current_char > 0 {
+                    self.current_char -= 1;
+                    self.words[self.current_word][self.current_char].status = CharStatus::Pending;
+                    self.words[self.current_word][self.current_char].typed = None;
+                }
+            }
+        }
+    }
+
+    fn on_mistake(&mut self, expected: char) {
+        self.streak = 0;
+        self.has_error_shake = false;
+        *self.stats.key_mistakes.entry(expected).or_insert(0) += 1;
+    }
+
+    pub fn complete(&mut self) {
+        self.state = GameState::Completed;
+        let (net, raw) = SessionStats::calculate_wpm(
+            self.stats.correct_keystrokes,
+            self.stats.total_keystrokes,
+            self.elapsed_time,
+        );
+        self.stats.net_wpm = net;
+        self.stats.raw_wpm = raw;
+        self.stats.accuracy = SessionStats::calculate_accuracy(
+            self.stats.correct_keystrokes,
+            self.stats.total_keystrokes,
+        );
+        self.stats.elapsed_time = self.elapsed_time;
+        self.stats.max_streak = self.max_streak;
+        self.stats.consistency = SessionStats::calculate_consistency(&self.stats.velocity_history);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_typos_advance_caret_and_backspace_recovers() {
+        let config = SessionConfig::default();
+        let mut engine = GameEngine::new(config);
+        engine.load_passage("the quick");
+
+        // 1. Type incorrect character 'x' for expected 't'
+        let correct = engine.handle_char('x');
+        assert!(!correct);
+        // Caret MUST advance on typo to index 1!
+        assert_eq!(engine.current_char, 1);
+        assert_eq!(engine.words[0][0].status, CharStatus::Incorrect);
+
+        // 2. Backspace moves caret back to index 0 and clears the typo
+        engine.handle_backspace(false);
+        assert_eq!(engine.current_char, 0);
+        assert_eq!(engine.words[0][0].status, CharStatus::Pending);
+
+        // 3. Typing correct key 't' succeeds and advances to index 1
+        let correct_fixed = engine.handle_char('t');
+        assert!(correct_fixed);
+        assert_eq!(engine.current_char, 1);
+        assert_eq!(engine.words[0][0].status, CharStatus::Correct);
+
+        // 4. Typing typo 'z' for expected 'h' advances to index 2
+        let correct2 = engine.handle_char('z');
+        assert!(!correct2);
+        assert_eq!(engine.current_char, 2);
+        assert_eq!(engine.words[0][1].status, CharStatus::Incorrect);
+
+        // 5. Typing correct 'e' advances to index 3 (end of word "the")
+        let correct3 = engine.handle_char('e');
+        assert!(correct3);
+        assert_eq!(engine.current_char, 3);
+        assert_eq!(engine.words[0][2].status, CharStatus::Correct);
+    }
+
+    #[test]
+    fn test_completes_immediately_on_last_letter_without_space() {
+        let config = SessionConfig::default();
+        let mut engine = GameEngine::new(config);
+        engine.load_passage("hi");
+
+        assert_eq!(engine.state, GameState::Idle);
+        engine.handle_char('h');
+        assert_eq!(engine.state, GameState::Running);
+        // Type the very last letter 'i'
+        engine.handle_char('i');
+        // Game must complete IMMEDIATELY without space!
+        assert_eq!(engine.state, GameState::Completed);
+    }
+}

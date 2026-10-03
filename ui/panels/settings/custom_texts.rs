@@ -1,0 +1,581 @@
+use crate::db::{DatabaseConnection, DbPassage, DbQueries, User};
+use crate::game::{GameMode, TimedDuration, WordCountTarget};
+use crate::ui::components::{ButtonVariant, UnifiedButton, UnifiedInput};
+use crate::ui::confirm::ConfirmModal;
+use crate::ui::theme::Theme;
+use crate::utils::text::sanitize_text;
+use egui::{Color32, Frame, RichText, Sense, Stroke, Vec2};
+
+#[derive(Clone, Debug)]
+pub struct CustomPassageRequest {
+    pub text: String,
+    pub mode: GameMode,
+    pub word_target: Option<WordCountTarget>,
+    pub duration: Option<TimedDuration>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PassageCreationMode {
+    Words,
+    Time,
+}
+
+pub struct CustomTextsTabState {
+    pub title_input: String,
+    pub content_input: String,
+    pub search_query: String,
+    pub mode: PassageCreationMode,
+    pub word_target: usize,     // 25, 40
+    pub time_target_sec: usize, // 15, 30, 60
+    pub toast_message: Option<(String, f64)>, // (message, expiry_timestamp)
+    pub limit_notice: Option<String>,
+    pub text_to_delete: Option<(i64, String)>,
+}
+
+impl Default for CustomTextsTabState {
+    fn default() -> Self {
+        Self {
+            title_input: String::new(),
+            content_input: String::new(),
+            search_query: String::new(),
+            mode: PassageCreationMode::Words,
+            word_target: 25,
+            time_target_sec: 25,
+            toast_message: None,
+            limit_notice: None,
+            text_to_delete: None,
+        }
+    }
+}
+
+pub struct CustomTextsTab;
+
+impl CustomTextsTab {
+    pub fn show(
+        ui: &mut egui::Ui,
+        state: &mut CustomTextsTabState,
+        db: &DatabaseConnection,
+        theme: &Theme,
+        _current_user: &Option<User>,
+        passage_to_load: &mut Option<CustomPassageRequest>,
+    ) {
+        let current_time = ui.ctx().input(|i| i.time);
+
+        ui.vertical(|ui| {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new("Custom Typing Passages Library")
+                    .color(theme.accent)
+                    .strong()
+                    .monospace()
+                    .size(13.0),
+            );
+            ui.label(
+                RichText::new("Design custom sentences with strict 25/40 word limits, live telemetry counters, and instant practice.")
+                    .color(theme.text_dim)
+                    .monospace()
+                    .size(11.0),
+            );
+            ui.add_space(14.0);
+
+            let card_w = ui.available_width();
+            let pad = 20.0;
+            let inner_w = card_w - pad * 2.0;
+
+            // ─────────────────────────────────────────────────────────────
+            // 1. CREATE NEW PASSAGE FORM
+            // ─────────────────────────────────────────────────────────────
+            let create_frame = Frame::none()
+                .fill(theme.bg_surface)
+                .stroke(Stroke::new(1.0, theme.border))
+                .rounding(10.0)
+                .inner_margin(egui::Margin::same(pad));
+
+            create_frame.show(ui, |ui| {
+                ui.set_min_width(inner_w);
+                ui.set_max_width(inner_w);
+
+                ui.label(
+                    RichText::new("Create New Practice Passage")
+                        .color(theme.text_active)
+                        .strong()
+                        .size(12.0)
+                        .monospace(),
+                );
+                ui.add_space(10.0);
+
+                // Mode Selection Bar: Segmented pills
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Mode:").color(theme.text_dim).monospace().size(10.5));
+                    ui.add_space(4.0);
+
+                    let words_active = state.mode == PassageCreationMode::Words;
+                    let words_var = if words_active { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                    if UnifiedButton::show(ui, "✎ Words Mode", words_var, theme, 110.0).clicked() {
+                        state.mode = PassageCreationMode::Words;
+                        state.limit_notice = None;
+                    }
+
+                    ui.add_space(6.0);
+
+                    let time_active = state.mode == PassageCreationMode::Time;
+                    let time_var = if time_active { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                    if UnifiedButton::show(ui, "⏱ Time Mode", time_var, theme, 110.0).clicked() {
+                        state.mode = PassageCreationMode::Time;
+                        state.limit_notice = None;
+                    }
+                });
+
+                ui.add_space(8.0);
+
+                // Target Limit Selector Pills: Exactly 25 and 40 words for Words Mode; 15, 30, 60 for Time Mode
+                match state.mode {
+                    PassageCreationMode::Words => {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Limit:").color(theme.text_dim).monospace().size(10.5));
+                            ui.add_space(4.0);
+
+                            for &w_count in &[25, 40] {
+                                let is_sel = state.word_target == w_count;
+                                let btn_var = if is_sel { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                                let label = format!("{w_count} Words");
+
+                                if UnifiedButton::show(ui, &label, btn_var, theme, 85.0).clicked() {
+                                    state.word_target = w_count;
+                                    state.limit_notice = None;
+                                }
+                                ui.add_space(4.0);
+                            }
+                        });
+                    }
+                    PassageCreationMode::Time => {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Limit:").color(theme.text_dim).monospace().size(10.5));
+                            ui.add_space(4.0);
+
+                            for &sec in &[25, 40] {
+                                let is_sel = state.time_target_sec == sec;
+                                let btn_var = if is_sel { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                                let label = format!("{sec} Seconds");
+
+                                if UnifiedButton::show(ui, &label, btn_var, theme, 90.0).clicked() {
+                                    state.time_target_sec = sec;
+                                    state.limit_notice = None;
+                                }
+                                ui.add_space(4.0);
+                            }
+                        });
+                    }
+                }
+
+                ui.add_space(14.0);
+
+                let inner_w = ui.available_width();
+
+                // Category / Title Input
+                ui.label(RichText::new("PASSAGE CATEGORY / TITLE").color(theme.text_dim).size(10.5).monospace());
+                ui.add_space(4.0);
+                UnifiedInput::singleline(
+                    ui,
+                    &mut state.title_input,
+                    "e.g., prose, code, quotes, custom",
+                    theme,
+                    inner_w,
+                );
+
+                ui.add_space(12.0);
+
+                // Text Content Input
+                ui.label(RichText::new("SENTENCE / PASSAGE TEXT").color(theme.text_dim).size(10.5).monospace());
+                ui.add_space(4.0);
+                UnifiedInput::multiline(
+                    ui,
+                    &mut state.content_input,
+                    "Type or paste practice text here (strict 25 or 40 word limits enforced)...",
+                    theme,
+                    inner_w,
+                    4,
+                );
+
+                // ─────────────────────────────────────────────────────────────
+                // Live Counter & Strict Limits Enforcement
+                // ─────────────────────────────────────────────────────────────
+                let cur_words = state.content_input.split_whitespace().count();
+                let cur_chars = state.content_input.chars().count();
+
+                let max_words = match state.mode {
+                    PassageCreationMode::Words => state.word_target,
+                    PassageCreationMode::Time => match state.time_target_sec {
+                        15 => 25,
+                        30 => 40,
+                        _ => 80,
+                    },
+                };
+
+                let max_chars = max_words * 7;
+                let is_full = cur_words >= max_words;
+
+                if cur_words > max_words {
+                    // Strict word limit truncator
+                    let words_list: Vec<&str> = state.content_input.split_whitespace().take(max_words).collect();
+                    state.content_input = words_list.join(" ");
+                    state.limit_notice = Some(format!("Capped at {max_words} words maximum limit!"));
+                }
+
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("TELEMETRY:").color(theme.text_dim).monospace().size(10.5));
+                    ui.add_space(4.0);
+
+                    // Word count chip
+                    let word_chip_color = if cur_words == max_words {
+                        theme.accent
+                    } else if cur_words > max_words {
+                        Color32::from_rgb(255, 92, 92)
+                    } else {
+                        theme.text_active
+                    };
+
+                    Frame::none()
+                        .fill(theme.bg)
+                        .stroke(Stroke::new(1.0, theme.border))
+                        .rounding(10.0)
+                        .inner_margin(egui::Margin::symmetric(10.0, 4.0))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new(format!("words: {cur_words} / {max_words}"))
+                                    .color(word_chip_color)
+                                    .monospace()
+                                    .strong()
+                                    .size(11.0),
+                            );
+                        });
+
+                    ui.add_space(6.0);
+
+                    // Char count chip
+                    Frame::none()
+                        .fill(theme.bg)
+                        .stroke(Stroke::new(1.0, theme.border))
+                        .rounding(10.0)
+                        .inner_margin(egui::Margin::symmetric(10.0, 4.0))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new(format!("chars: {cur_chars} / {max_chars}"))
+                                    .color(theme.text_dim)
+                                    .monospace()
+                                    .size(11.0),
+                            );
+                        });
+
+                    // Mode summary chip
+                    let summary_label = match state.mode {
+                        PassageCreationMode::Words => format!("target: {max_words} words"),
+                        PassageCreationMode::Time => format!("target: {}s time", state.time_target_sec),
+                    };
+
+                    Frame::none()
+                        .fill(theme.bg)
+                        .stroke(Stroke::new(1.0, theme.border))
+                        .rounding(10.0)
+                        .inner_margin(egui::Margin::symmetric(10.0, 4.0))
+                        .show(ui, |ui| {
+                            ui.label(RichText::new(summary_label).color(theme.text_dim).monospace().size(11.0));
+                        });
+                });
+
+                // Visual Mini Progress Bar
+                ui.add_space(6.0);
+                let progress = (cur_words as f32 / max_words as f32).clamp(0.0, 1.0);
+                let (prog_rect, _) = ui.allocate_exact_size(Vec2::new(inner_w, 4.0), Sense::hover());
+                ui.painter().rect_filled(prog_rect, 2.0, theme.border);
+                if progress > 0.0 {
+                    let filled_w = prog_rect.width() * progress;
+                    let fill_col = if is_full { Color32::from_rgb(255, 92, 92) } else { theme.accent };
+                    ui.painter().rect_filled(
+                        egui::Rect::from_min_size(prog_rect.min, Vec2::new(filled_w, 4.0)),
+                        2.0,
+                        fill_col,
+                    );
+                }
+
+                if let Some(notice) = &state.limit_notice {
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(notice).color(Color32::from_rgb(235, 175, 75)).monospace().size(10.5));
+                }
+
+                ui.add_space(14.0);
+
+                // Action Buttons Row: Save & Practice Now (Primary), Sanitize (Secondary), Save to Library (Secondary)
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(10.0, 0.0);
+
+                    if UnifiedButton::show(ui, "Sanitize Text", ButtonVariant::Secondary, theme, 110.0).clicked() {
+                        state.content_input = sanitize_text(&state.content_input);
+                        state.toast_message = Some(("Normalized quotes and whitespace.".to_string(), current_time + 3.0));
+                    }
+
+                    if UnifiedButton::show(ui, "Save & Practice Now", ButtonVariant::Primary, theme, 160.0).clicked() {
+                        let clean = sanitize_text(&state.content_input);
+                        if clean.trim().is_empty() {
+                            state.toast_message = Some(("Please enter text content first.".to_string(), current_time + 3.0));
+                        } else {
+                            let category = if state.title_input.trim().is_empty() {
+                                "custom"
+                            } else {
+                                state.title_input.trim()
+                            };
+
+                            let _ = DbQueries::insert_passage(db, &clean, category, true);
+
+                            let (mode, word_target, duration) = match state.mode {
+                                PassageCreationMode::Words => {
+                                    let wt = match state.word_target {
+                                        40 => WordCountTarget::Words40,
+                                        _ => WordCountTarget::Words25,
+                                    };
+                                    (GameMode::Words, Some(wt), None)
+                                }
+                                PassageCreationMode::Time => {
+                                    let td = match state.time_target_sec {
+                                        40 => TimedDuration::Sec40,
+                                        _ => TimedDuration::Sec25,
+                                    };
+                                    (GameMode::Timed, None, Some(td))
+                                }
+                            };
+
+                            *passage_to_load = Some(CustomPassageRequest {
+                                text: clean,
+                                mode,
+                                word_target,
+                                duration,
+                            });
+                            state.toast_message = Some(("Loaded passage to practice session!".to_string(), current_time + 3.0));
+                        }
+                    }
+
+                    if UnifiedButton::show(ui, "Save to Library", ButtonVariant::Secondary, theme, 120.0).clicked() {
+                        let clean = sanitize_text(&state.content_input);
+                        if !clean.trim().is_empty() {
+                            let category = if state.title_input.trim().is_empty() {
+                                "custom"
+                            } else {
+                                state.title_input.trim()
+                            };
+
+                            match DbQueries::insert_passage(db, &clean, category, true) {
+                                Ok(_) => {
+                                    state.toast_message = Some(("Saved passage to database library.".to_string(), current_time + 3.0));
+                                    state.title_input.clear();
+                                    state.content_input.clear();
+                                    state.limit_notice = None;
+                                }
+                                Err(e) => {
+                                    state.toast_message = Some((format!("Error: {e}"), current_time + 3.0));
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Toast Notification indicator (fades out after 3 seconds)
+                if let Some((msg, expiry)) = &state.toast_message {
+                    if current_time < *expiry {
+                        ui.add_space(8.0);
+                        let remaining = *expiry - current_time;
+                        let alpha = (remaining / 0.5).min(1.0) as f32;
+                        let toast_color = Color32::from_rgba_unmultiplied(theme.accent.r(), theme.accent.g(), theme.accent.b(), (alpha * 255.0) as u8);
+
+                        Frame::none()
+                            .fill(Color32::from_rgba_unmultiplied(theme.accent.r(), theme.accent.g(), theme.accent.b(), 20))
+                            .stroke(Stroke::new(1.0, toast_color))
+                            .rounding(4.0)
+                            .inner_margin(egui::Margin::symmetric(10.0, 5.0))
+                            .show(ui, |ui| {
+                                ui.label(RichText::new(format!("✓  {msg}")).color(toast_color).size(11.0).monospace());
+                            });
+                    }
+                }
+            });
+
+            ui.add_space(18.0);
+
+            // ─────────────────────────────────────────────────────────────
+            // 2. SAVED PASSAGES LIBRARY (With SQLite & FTS5 search)
+            // ─────────────────────────────────────────────────────────────
+            let list_frame = Frame::none()
+                .fill(theme.bg_surface)
+                .stroke(Stroke::new(1.0, theme.border))
+                .rounding(10.0)
+                .inner_margin(egui::Margin::same(pad));
+
+            list_frame.show(ui, |ui| {
+                ui.set_min_width(inner_w);
+                ui.set_max_width(inner_w);
+
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Saved Passages Library")
+                            .color(theme.text_active)
+                            .strong()
+                            .size(12.0)
+                            .monospace(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        UnifiedInput::singleline(
+                            ui,
+                            &mut state.search_query,
+                            "🔍 Search library...",
+                            theme,
+                            200.0,
+                        );
+                    });
+                });
+
+                ui.add_space(12.0);
+
+                let passages_res: rusqlite::Result<Vec<DbPassage>> = if state.search_query.trim().is_empty() {
+                    DbQueries::get_custom_passages(db, 30)
+                } else {
+                    DbQueries::search_passages(db, state.search_query.trim())
+                };
+
+                match passages_res {
+                    Ok(passages) => {
+                        if passages.is_empty() {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(14.0);
+                                ui.label(
+                                    RichText::new("No custom passages found in library.")
+                                        .color(theme.text_dim)
+                                        .monospace()
+                                        .size(11.5),
+                                );
+                                ui.add_space(14.0);
+                            });
+                        } else {
+                            egui::ScrollArea::vertical()
+                                .id_salt("saved_passages_scroll_list")
+                                .max_height(280.0)
+                                .auto_shrink([false, false])
+                                .min_scrolled_width(inner_w)
+                                .show(ui, |ui| {
+                                    ui.set_min_width(inner_w);
+                                    ui.set_max_width(inner_w);
+                                    for passage in passages {
+                                        let item_frame = Frame::none()
+                                            .fill(theme.bg)
+                                            .stroke(Stroke::new(1.0, theme.border))
+                                            .rounding(8.0)
+                                            .inner_margin(egui::Margin::same(12.0));
+
+                                        item_frame.show(ui, |ui| {
+                                            ui.set_min_width(inner_w - 24.0);
+                                            ui.set_max_width(inner_w - 24.0);
+                                            ui.horizontal(|ui| {
+                                                ui.vertical(|ui| {
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(
+                                                            RichText::new(format!("Passage #{}", passage.id))
+                                                                .color(theme.text_active)
+                                                                .strong()
+                                                                .monospace()
+                                                                .size(12.0),
+                                                        );
+
+                                                        Frame::none()
+                                                            .fill(theme.bg_surface)
+                                                            .stroke(Stroke::new(1.0, theme.border))
+                                                            .rounding(4.0)
+                                                            .inner_margin(egui::Margin::symmetric(6.0, 2.0))
+                                                            .show(ui, |ui| {
+                                                                ui.label(
+                                                                    RichText::new(passage.category.to_uppercase())
+                                                                        .color(theme.accent)
+                                                                        .monospace()
+                                                                        .size(9.5),
+                                                                );
+                                                            });
+                                                    });
+
+                                                    let preview_snippet = if passage.text_content.len() > 90 {
+                                                        format!("{}...", &passage.text_content[..90])
+                                                    } else {
+                                                        passage.text_content.clone()
+                                                    };
+                                                    ui.label(
+                                                        RichText::new(preview_snippet)
+                                                            .color(theme.text_dim)
+                                                            .size(11.0)
+                                                            .monospace(),
+                                                    );
+
+                                                    ui.label(
+                                                        RichText::new(format!("{} words", passage.word_count))
+                                                            .color(theme.text_dim)
+                                                            .size(10.0)
+                                                            .monospace(),
+                                                    );
+                                                });
+
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    // Delete passage button
+                                                    if UnifiedButton::show(ui, "Delete", ButtonVariant::Danger, theme, 60.0).clicked() {
+                                                        state.text_to_delete = Some((passage.id, format!("Passage #{}", passage.id)));
+                                                    }
+
+                                                    ui.add_space(4.0);
+
+                                                    // Practice button
+                                                    if UnifiedButton::show(ui, "Practice", ButtonVariant::Primary, theme, 80.0).clicked() {
+                                                        let wt = if passage.word_count >= 35 {
+                                                            WordCountTarget::Words40
+                                                        } else {
+                                                            WordCountTarget::Words25
+                                                        };
+
+                                                        *passage_to_load = Some(CustomPassageRequest {
+                                                            text: passage.text_content,
+                                                            mode: GameMode::Words,
+                                                            word_target: Some(wt),
+                                                            duration: None,
+                                                        });
+                                                    }
+                                                });
+                                            });
+                                        });
+                                        ui.add_space(8.0);
+                                    }
+                                });
+                        }
+                    }
+                    Err(e) => {
+                        ui.label(
+                            RichText::new(format!("Failed to load passages: {e}"))
+                                .color(Color32::from_rgb(255, 92, 92)),
+                        );
+                    }
+                }
+            });
+
+            // Delete passage modal confirmation
+            if let Some((passage_id, ref title)) = state.text_to_delete.clone() {
+                if let Some(confirmed) = ConfirmModal::show(
+                    ui.ctx(),
+                    theme,
+                    "DELETE CUSTOM PASSAGE",
+                    title,
+                    "Are you sure you want to permanently delete this passage from your library?",
+                    "Delete Passage",
+                ) {
+                    if confirmed {
+                        let _ = DbQueries::delete_passage(db, passage_id);
+                        state.toast_message = Some((format!("Deleted {title}."), current_time + 3.0));
+                    }
+                    state.text_to_delete = None;
+                }
+            }
+        });
+    }
+}
