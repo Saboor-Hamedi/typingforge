@@ -48,8 +48,8 @@ pub struct CustomTextsTabState {
     pub content_input: String,
     pub search_query: String,
     pub mode: PassageCreationMode,
-    pub word_target: usize,     // 25, 40
-    pub time_target_sec: usize, // 15, 30, 60
+    pub word_target: usize,     // 20, 40
+    pub time_target_sec: usize, // 20, 40
     pub toast_message: Option<(String, f64)>, // (message, expiry_timestamp)
     pub limit_notice: Option<String>,
     pub text_to_delete: Option<(i64, String)>,
@@ -63,8 +63,8 @@ impl Default for CustomTextsTabState {
             content_input: String::new(),
             search_query: String::new(),
             mode: PassageCreationMode::Words,
-            word_target: 25,
-            time_target_sec: 25,
+            word_target: 20,
+            time_target_sec: 20,
             toast_message: None,
             limit_notice: None,
             text_to_delete: None,
@@ -149,69 +149,63 @@ impl CustomTextsTab {
                 }
                 ui.add_space(10.0);
 
-                // Mode Selection Bar: Segmented pills
+                // 4 Uniform Selection Buttons: Word Mode, Time Mode, 20 Limit, 40 Limit
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Mode:").color(theme.text_dim).monospace().size(10.5));
-                    ui.add_space(4.0);
+                    ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
 
+                    // 1. Word Mode
                     let words_active = state.mode == PassageCreationMode::Words;
                     let words_var = if words_active { ButtonVariant::Primary } else { ButtonVariant::Secondary };
-                    if UnifiedButton::show(ui, "✎ Words Mode", words_var, theme, 110.0).clicked() {
+                    if UnifiedButton::show(ui, "Word Mode", words_var, theme, 105.0).clicked() {
                         state.mode = PassageCreationMode::Words;
                         state.limit_notice = None;
                     }
 
-                    ui.add_space(6.0);
-
+                    // 2. Time Mode
                     let time_active = state.mode == PassageCreationMode::Time;
                     let time_var = if time_active { ButtonVariant::Primary } else { ButtonVariant::Secondary };
-                    if UnifiedButton::show(ui, "⏱ Time Mode", time_var, theme, 110.0).clicked() {
+                    if UnifiedButton::show(ui, "Time Mode", time_var, theme, 105.0).clicked() {
                         state.mode = PassageCreationMode::Time;
                         state.limit_notice = None;
                     }
+
+                    // Divider space
+                    ui.add_space(8.0);
+
+                    // 3 & 4. Limit Buttons (Uniform styling matching mode buttons)
+                    match state.mode {
+                        PassageCreationMode::Words => {
+                            let is_20 = state.word_target == 20;
+                            let v_20 = if is_20 { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                            if UnifiedButton::show(ui, "20 Words", v_20, theme, 105.0).clicked() {
+                                state.word_target = 20;
+                                state.limit_notice = None;
+                            }
+
+                            let is_40 = state.word_target == 40;
+                            let v_40 = if is_40 { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                            if UnifiedButton::show(ui, "40 Words", v_40, theme, 105.0).clicked() {
+                                state.word_target = 40;
+                                state.limit_notice = None;
+                            }
+                        }
+                        PassageCreationMode::Time => {
+                            let is_20 = state.time_target_sec == 20;
+                            let v_20 = if is_20 { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                            if UnifiedButton::show(ui, "20 Seconds", v_20, theme, 105.0).clicked() {
+                                state.time_target_sec = 20;
+                                state.limit_notice = None;
+                            }
+
+                            let is_40 = state.time_target_sec == 40;
+                            let v_40 = if is_40 { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                            if UnifiedButton::show(ui, "40 Seconds", v_40, theme, 105.0).clicked() {
+                                state.time_target_sec = 40;
+                                state.limit_notice = None;
+                            }
+                        }
+                    }
                 });
-
-                ui.add_space(8.0);
-
-                // Target Limit Selector Pills: Exactly 25 and 40 words for Words Mode; 15, 30, 60 for Time Mode
-                match state.mode {
-                    PassageCreationMode::Words => {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("Limit:").color(theme.text_dim).monospace().size(10.5));
-                            ui.add_space(4.0);
-
-                            for &w_count in &[25, 40] {
-                                let is_sel = state.word_target == w_count;
-                                let btn_var = if is_sel { ButtonVariant::Primary } else { ButtonVariant::Secondary };
-                                let label = format!("{w_count} Words");
-
-                                if UnifiedButton::show(ui, &label, btn_var, theme, 85.0).clicked() {
-                                    state.word_target = w_count;
-                                    state.limit_notice = None;
-                                }
-                                ui.add_space(4.0);
-                            }
-                        });
-                    }
-                    PassageCreationMode::Time => {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("Limit:").color(theme.text_dim).monospace().size(10.5));
-                            ui.add_space(4.0);
-
-                            for &sec in &[25, 40] {
-                                let is_sel = state.time_target_sec == sec;
-                                let btn_var = if is_sel { ButtonVariant::Primary } else { ButtonVariant::Secondary };
-                                let label = format!("{sec} Seconds");
-
-                                if UnifiedButton::show(ui, &label, btn_var, theme, 90.0).clicked() {
-                                    state.time_target_sec = sec;
-                                    state.limit_notice = None;
-                                }
-                                ui.add_space(4.0);
-                            }
-                        });
-                    }
-                }
 
                 ui.add_space(14.0);
 
@@ -562,14 +556,15 @@ impl CustomTextsTab {
                 ui.add_space(14.0);
 
                 let passages_res: rusqlite::Result<Vec<DbPassage>> = if state.search_query.trim().is_empty() {
-                    DbQueries::get_custom_passages(db, 30)
+                    DbQueries::get_custom_passages(db, 50)
                 } else {
                     DbQueries::search_passages(db, state.search_query.trim())
                 };
 
                 match passages_res {
                     Ok(passages) => {
-                        if passages.is_empty() {
+                        let passages_to_display: Vec<DbPassage> = passages.into_iter().take(50).collect();
+                        if passages_to_display.is_empty() {
                             ui.vertical_centered(|ui| {
                                 ui.add_space(14.0);
                                 ui.label(
@@ -582,7 +577,7 @@ impl CustomTextsTab {
                             });
                         } else {
                             // Dynamic height: No constrained max_height, grows naturally with items
-                            for passage in passages {
+                            for passage in passages_to_display {
                                 let item_frame = Frame::none()
                                     .fill(theme.bg)
                                     .stroke(Stroke::new(1.0, theme.border))
@@ -590,82 +585,100 @@ impl CustomTextsTab {
                                     .inner_margin(egui::Margin::symmetric(14.0, 10.0));
 
                                 item_frame.show(ui, |ui| {
-                                    ui.set_min_width(inner_w);
-                                    ui.set_max_width(inner_w);
+                                    let avail_w = ui.available_width();
+                                    let actions_w = 236.0;
+                                    let info_w = (avail_w - actions_w - 12.0).max(120.0);
+
                                     ui.horizontal(|ui| {
-                                        // Left details: Smart title, category/ID badge, preview snippet, word count
-                                        ui.vertical(|ui| {
-                                            ui.horizontal(|ui| {
-                                                let smart_title = get_smart_passage_title(&passage);
+                                        // Left details: bounded width so it never pushes or bugs right buttons
+                                        ui.allocate_ui_with_layout(
+                                            Vec2::new(info_w, 0.0),
+                                            egui::Layout::top_down(egui::Align::Min),
+                                            |ui| {
+                                                ui.set_width(info_w);
+                                                ui.horizontal(|ui| {
+                                                    let smart_title = get_smart_passage_title(&passage);
+                                                    ui.label(
+                                                        RichText::new(smart_title)
+                                                            .color(theme.text_active)
+                                                            .strong()
+                                                            .monospace()
+                                                            .size(12.0),
+                                                    );
+
+                                                    let cat_label = if passage.category.trim().is_empty()
+                                                        || passage.category.eq_ignore_ascii_case("custom")
+                                                        || passage.category.eq_ignore_ascii_case("seed")
+                                                    {
+                                                        format!("#{}", passage.id.abs())
+                                                    } else {
+                                                        passage.category.to_uppercase()
+                                                    };
+
+                                                    Frame::none()
+                                                        .fill(theme.bg_surface)
+                                                        .stroke(Stroke::new(1.0, theme.border))
+                                                        .rounding(4.0)
+                                                        .inner_margin(egui::Margin::symmetric(6.0, 2.0))
+                                                        .show(ui, |ui| {
+                                                            ui.label(
+                                                                RichText::new(cat_label)
+                                                                    .color(theme.accent)
+                                                                    .monospace()
+                                                                    .size(9.5),
+                                                            );
+                                                        });
+                                                });
+
+                                                let preview_snippet = if passage.text_content.len() > 80 {
+                                                    format!("{}…", &passage.text_content[..80])
+                                                } else {
+                                                    passage.text_content.clone()
+                                                };
                                                 ui.label(
-                                                    RichText::new(smart_title)
-                                                        .color(theme.text_active)
-                                                        .strong()
-                                                        .monospace()
-                                                        .size(12.0),
+                                                    RichText::new(preview_snippet)
+                                                        .color(theme.text_dim)
+                                                        .size(11.0)
+                                                        .monospace(),
                                                 );
 
-                                                let cat_label = if passage.category.trim().is_empty()
-                                                    || passage.category.eq_ignore_ascii_case("custom")
-                                                    || passage.category.eq_ignore_ascii_case("seed")
-                                                {
-                                                    format!("#{}", passage.id.abs())
-                                                } else {
-                                                    passage.category.to_uppercase()
-                                                };
+                                                ui.label(
+                                                    RichText::new(format!("{} words", passage.word_count))
+                                                        .color(theme.text_dim)
+                                                        .size(10.0)
+                                                        .monospace(),
+                                                );
+                                            },
+                                        );
 
-                                                Frame::none()
-                                                    .fill(theme.bg_surface)
-                                                    .stroke(Stroke::new(1.0, theme.border))
-                                                    .rounding(4.0)
-                                                    .inner_margin(egui::Margin::symmetric(6.0, 2.0))
-                                                    .show(ui, |ui| {
-                                                        ui.label(
-                                                            RichText::new(cat_label)
-                                                                .color(theme.accent)
-                                                                .monospace()
-                                                                .size(9.5),
-                                                        );
-                                                    });
-                                            });
-
-                                            let preview_snippet = if passage.text_content.len() > 90 {
-                                                format!("{}…", &passage.text_content[..90])
-                                            } else {
-                                                passage.text_content.clone()
-                                            };
-                                            ui.label(
-                                                RichText::new(preview_snippet)
-                                                    .color(theme.text_dim)
-                                                    .size(11.0)
-                                                    .monospace(),
-                                            );
-
-                                            ui.label(
-                                                RichText::new(format!("{} words", passage.word_count))
-                                                    .color(theme.text_dim)
-                                                    .size(10.0)
-                                                    .monospace(),
-                                            );
-                                        });
-
-                                        // Right action buttons: Edit | Practice | Delete
-                                        // In right_to_left layout, items are added right-to-left:
-                                        // 1. Delete (rightmost)
-                                        // 2. Practice (middle)
-                                        // 3. Edit (leftmost)
-                                        // Visual result: [Edit] [Practice] [Delete]
+                                        // Right action buttons: Practice | Edit | Delete
+                                        // All 3 buttons look identical (same variant, same width, same height)
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                            // Delete button with subtle red styling (transparent bg, red stroke/text)
-                                            if UnifiedButton::show(ui, "Delete", ButtonVariant::Danger, theme, 60.0).clicked() {
+                                            ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
+
+                                            // 1. Delete (furthest right)
+                                            if UnifiedButton::show(ui, "Delete", ButtonVariant::Secondary, theme, 72.0).clicked() {
                                                 state.text_to_delete = Some((passage.id, format!("Passage #{}", passage.id.abs())));
                                             }
 
-                                            ui.add_space(6.0);
+                                            // 2. Edit (middle)
+                                            if UnifiedButton::show(ui, "Edit", ButtonVariant::Secondary, theme, 72.0).clicked() {
+                                                state.editing_passage_id = Some(passage.id);
+                                                state.title_input = passage.category.clone();
+                                                state.content_input = passage.text_content.clone();
+                                                if passage.word_count <= 20 {
+                                                    state.mode = PassageCreationMode::Words;
+                                                    state.word_target = 20;
+                                                } else {
+                                                    state.mode = PassageCreationMode::Words;
+                                                    state.word_target = 40;
+                                                }
+                                                state.limit_notice = None;
+                                            }
 
-                                            // Practice button (Primary accent)
-                                            if UnifiedButton::show(ui, "Practice", ButtonVariant::Primary, theme, 75.0).clicked() {
-                                                let wt = if passage.word_count >= 35 {
+                                            // 3. Practice (leftmost of the 3 buttons)
+                                            if UnifiedButton::show(ui, "Practice", ButtonVariant::Secondary, theme, 72.0).clicked() {
+                                                let wt = if passage.word_count >= 30 {
                                                     WordCountTarget::Words40
                                                 } else {
                                                     WordCountTarget::Words25
@@ -677,23 +690,6 @@ impl CustomTextsTab {
                                                     word_target: Some(wt),
                                                     duration: None,
                                                 });
-                                            }
-
-                                            ui.add_space(6.0);
-
-                                            // Edit button (Secondary outline)
-                                            if UnifiedButton::show(ui, "Edit", ButtonVariant::Secondary, theme, 60.0).clicked() {
-                                                state.editing_passage_id = Some(passage.id);
-                                                state.title_input = passage.category.clone();
-                                                state.content_input = passage.text_content.clone();
-                                                if passage.word_count <= 25 {
-                                                    state.mode = PassageCreationMode::Words;
-                                                    state.word_target = 25;
-                                                } else {
-                                                    state.mode = PassageCreationMode::Words;
-                                                    state.word_target = 40;
-                                                }
-                                                state.limit_notice = None;
                                             }
                                         });
                                     });

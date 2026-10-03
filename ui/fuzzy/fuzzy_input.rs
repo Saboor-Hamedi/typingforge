@@ -1,5 +1,5 @@
 use crate::ui::theme::Theme;
-use egui::{FontId, Pos2, Rect, Sense, Stroke, Vec2};
+use egui::{Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 
 pub struct FuzzyInput;
 
@@ -11,34 +11,24 @@ impl FuzzyInput {
         request_focus: bool,
     ) -> bool {
         let mut text_changed = false;
-        // Generous vertical padding for a spacious, minimal macOS Spotlight feel
-        let height = 52.0;
+        // Sleek, compact command-bar size (48px)
+        let height = 48.0;
         let width = ui.available_width();
 
         let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
         let painter = ui.painter_at(rect);
 
-        // Borderless: NO inner box border or heavy fill. Text floats cleanly in modal.
+        // Right side indicators: Magnifying glass and/or Ctrl+P badge, plus clear button when query not empty
+        let right_padding = if !query.is_empty() { 68.0 } else { 88.0 };
 
         // ─────────────────────────────────────────────────────────────────
-        // Sleek Vector Magnifying Glass Icon (Subtle & aligned)
+        // Vertically Centered Search Input Field (Sleek command bar)
         // ─────────────────────────────────────────────────────────────────
-        let icon_center = Pos2::new(rect.min.x + 24.0, rect.center().y - 1.0);
-        let glass_radius = 6.0;
-        let icon_color = theme.accent.linear_multiply(0.9);
-        painter.circle_stroke(icon_center, glass_radius, Stroke::new(1.6, icon_color));
-        let handle_start = icon_center + Vec2::new(glass_radius * 0.707, glass_radius * 0.707);
-        let handle_end = handle_start + Vec2::new(4.5, 4.5);
-        painter.line_segment([handle_start, handle_end], Stroke::new(1.8, icon_color));
-
-        // ─────────────────────────────────────────────────────────────────
-        // Vertically Centered Search Input Field (Generous padding, floating)
-        // ─────────────────────────────────────────────────────────────────
-        let text_h = 28.0;
+        let text_h = 24.0;
         let text_y = rect.center().y - text_h / 2.0;
         let text_rect = Rect::from_min_max(
-            Pos2::new(rect.min.x + 50.0, text_y),
-            Pos2::new(rect.max.x - 44.0, text_y + text_h),
+            Pos2::new(rect.min.x + 16.0, text_y),
+            Pos2::new(rect.max.x - right_padding, text_y + text_h),
         );
 
         let mut child_ui = ui.new_child(
@@ -52,9 +42,14 @@ impl FuzzyInput {
             text_rect.size(),
             egui::TextEdit::singleline(query)
                 .id(id)
-                .hint_text("Search passages by title or content...")
-                .font(FontId::proportional(15.5))
+                .hint_text(
+                    RichText::new("Search passages...")
+                        .color(Color32::from_white_alpha(75))
+                        .italics(),
+                )
+                .font(FontId::proportional(15.0))
                 .text_color(theme.text_active)
+                .margin(Vec2::ZERO)
                 .frame(false),
         );
 
@@ -66,11 +61,37 @@ impl FuzzyInput {
             text_changed = true;
         }
 
-        // Clear "✕" button when query is not empty
-        if !query.is_empty() {
+        // ─────────────────────────────────────────────────────────────────
+        // Right side: Subtle, muted magnifying glass icon and Ctrl+P hint
+        // ─────────────────────────────────────────────────────────────────
+        if query.is_empty() {
+            // Subtle keyboard shortcut hint "Ctrl P"
+            let badge_rect = Rect::from_center_size(
+                Pos2::new(rect.max.x - 52.0, rect.center().y),
+                Vec2::new(44.0, 20.0),
+            );
+            painter.rect_stroke(badge_rect, 4.0, Stroke::new(1.0, Color32::from_white_alpha(22)));
+            painter.text(
+                badge_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "Ctrl P",
+                FontId::monospace(10.0),
+                theme.text_dim.linear_multiply(0.7),
+            );
+
+            // Subtle magnifying glass icon on the far right
+            let icon_center = Pos2::new(rect.max.x - 16.0, rect.center().y - 1.0);
+            let glass_radius = 5.0;
+            let icon_color = theme.text_dim.linear_multiply(0.65);
+            painter.circle_stroke(icon_center, glass_radius, Stroke::new(1.3, icon_color));
+            let handle_start = icon_center + Vec2::new(glass_radius * 0.707, glass_radius * 0.707);
+            let handle_end = handle_start + Vec2::new(3.5, 3.5);
+            painter.line_segment([handle_start, handle_end], Stroke::new(1.4, icon_color));
+        } else {
+            // Clear "✕" button
             let clear_rect = Rect::from_center_size(
-                Pos2::new(rect.max.x - 24.0, rect.center().y),
-                Vec2::new(22.0, 22.0),
+                Pos2::new(rect.max.x - 42.0, rect.center().y),
+                Vec2::new(20.0, 20.0),
             );
             let clear_resp = ui.interact(clear_rect, ui.id().with("fuzzy_clear_btn"), Sense::click());
             if clear_resp.hovered() {
@@ -88,6 +109,15 @@ impl FuzzyInput {
                 FontId::monospace(12.0),
                 clear_col,
             );
+
+            // Subtle magnifying glass icon on the far right
+            let icon_center = Pos2::new(rect.max.x - 16.0, rect.center().y - 1.0);
+            let glass_radius = 5.0;
+            let icon_color = theme.text_dim.linear_multiply(0.65);
+            painter.circle_stroke(icon_center, glass_radius, Stroke::new(1.3, icon_color));
+            let handle_start = icon_center + Vec2::new(glass_radius * 0.707, glass_radius * 0.707);
+            let handle_end = handle_start + Vec2::new(3.5, 3.5);
+            painter.line_segment([handle_start, handle_end], Stroke::new(1.4, icon_color));
         }
 
         text_changed

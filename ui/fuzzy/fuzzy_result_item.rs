@@ -19,7 +19,7 @@ impl FuzzyResultItem {
         theme: &Theme,
     ) -> ResultItemAction {
         let mut action = ResultItemAction::None;
-        let item_height = 46.0;
+        let item_height = 44.0;
         let item_width = ui.available_width();
 
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(item_width, item_height), Sense::click());
@@ -30,9 +30,9 @@ impl FuzzyResultItem {
         }
 
         let painter = ui.painter_at(rect);
-        let rounding = 8.0;
+        let rounding = 6.0;
 
-        // Subtle, lightweight selection & hover states (low opacity, never heavy or harsh)
+        // Subtle, lightweight selection & hover states
         if is_selected {
             let sel_bg = theme.accent.linear_multiply(0.12);
             painter.rect_filled(rect, rounding, sel_bg);
@@ -40,21 +40,22 @@ impl FuzzyResultItem {
             painter.rect_filled(rect, rounding, Color32::from_white_alpha(10));
         }
 
-        let pad_x = 16.0;
-        let right_pad = 16.0;
+        let pad_x = 14.0;
+        let right_pad = 14.0;
         let center_y = rect.center().y;
+        let badge_font = FontId::proportional(11.5);
+        let subtle_border = Stroke::new(1.0, Color32::from_white_alpha(25)); // 10% opacity subtle border
 
         // ─────────────────────────────────────────────────────────────────
-        // RIGHT SIDE: SUBTLY STYLED BADGES
-        // Thin 1px border (20-30% opacity), low-opacity fill (5-10%), rounded corners
+        // RIGHT SIDE: BADGES (Word count, Mode, Edit)
+        // STRICTLY TRANSPARENT BACKGROUNDS (No creamy fills!)
         // ─────────────────────────────────────────────────────────────────
 
-        // 1. "Edit" Badge: Interactive button with accent color text
+        // 1. "Edit" Badge Button (Accent text, transparent background)
         let edit_label = "Edit";
-        let badge_font = FontId::proportional(12.0);
         let edit_text_w = ui.painter().layout_no_wrap(edit_label.to_string(), badge_font.clone(), Color32::WHITE).size().x;
-        let edit_w = edit_text_w + 16.0; // px-2
-        let edit_h = 24.0;              // py-1
+        let edit_w = edit_text_w + 14.0;
+        let edit_h = 22.0;
         let edit_rect = Rect::from_center_size(
             Pos2::new(rect.max.x - right_pad - edit_w / 2.0, center_y),
             Vec2::new(edit_w, edit_h),
@@ -73,18 +74,13 @@ impl FuzzyResultItem {
             action = ResultItemAction::Edit;
         }
 
-        let edit_bg = if edit_resp.hovered() {
-            theme.accent.linear_multiply(0.18)
-        } else {
-            theme.accent.linear_multiply(0.08)
-        };
         let edit_border = if edit_resp.hovered() {
-            Stroke::new(1.0, theme.accent.linear_multiply(0.65))
+            Stroke::new(1.0, theme.accent.linear_multiply(0.55))
         } else {
-            Stroke::new(1.0, theme.accent.linear_multiply(0.28))
+            subtle_border
         };
-        painter.rect_filled(edit_rect, 5.0, edit_bg);
-        painter.rect_stroke(edit_rect, 5.0, edit_border);
+        // Transparent background: NO rect_filled!
+        painter.rect_stroke(edit_rect, 4.0, edit_border);
         painter.text(
             edit_rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -93,7 +89,7 @@ impl FuzzyResultItem {
             theme.accent,
         );
 
-        // 2. Mode Badge: EITHER "Word" OR "Time" (never both)
+        // 2. Mode Badge: EITHER "Word" OR "Time"
         let mode_label = if passage.category.to_lowercase().contains("time") {
             "Time"
         } else if passage.word_count > 30 {
@@ -102,53 +98,79 @@ impl FuzzyResultItem {
             "Word"
         };
         let mode_text_w = ui.painter().layout_no_wrap(mode_label.to_string(), badge_font.clone(), Color32::WHITE).size().x;
-        let mode_w = mode_text_w + 16.0;
+        let mode_w = mode_text_w + 14.0;
         let mode_rect = Rect::from_center_size(
-            Pos2::new(edit_rect.min.x - 8.0 - mode_w / 2.0, center_y),
-            Vec2::new(mode_w, 24.0),
+            Pos2::new(edit_rect.min.x - 6.0 - mode_w / 2.0, center_y),
+            Vec2::new(mode_w, 22.0),
         );
 
-        let badge_bg = Color32::from_white_alpha(8);
-        let badge_border = Stroke::new(1.0, Color32::from_white_alpha(32));
-        painter.rect_filled(mode_rect, 5.0, badge_bg);
-        painter.rect_stroke(mode_rect, 5.0, badge_border);
+        // Transparent background: NO rect_filled!
+        painter.rect_stroke(mode_rect, 4.0, subtle_border);
         painter.text(
             mode_rect.center(),
             egui::Align2::CENTER_CENTER,
             mode_label,
+            badge_font.clone(),
+            theme.text_dim,
+        );
+
+        // 3. Word Count Badge: "{w} words"
+        let words_label = format!("{} words", passage.word_count);
+        let words_text_w = ui.painter().layout_no_wrap(words_label.clone(), badge_font.clone(), Color32::WHITE).size().x;
+        let words_w = words_text_w + 14.0;
+        let words_rect = Rect::from_center_size(
+            Pos2::new(mode_rect.min.x - 6.0 - words_w / 2.0, center_y),
+            Vec2::new(words_w, 22.0),
+        );
+
+        // Transparent background: NO rect_filled!
+        painter.rect_stroke(words_rect, 4.0, subtle_border);
+        painter.text(
+            words_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            words_label,
             badge_font,
             theme.text_dim,
         );
 
         // ─────────────────────────────────────────────────────────────────
         // LEFT SIDE: SMART TITLE / CONTENT PREVIEW (Never generic "custom")
-        // If title length < 10 or generic, show first few words of content
+        // Truncate cleanly so it never overlaps the badges
         // ─────────────────────────────────────────────────────────────────
-        let title_text = get_smart_title(passage);
+        let available_title_w = (words_rect.min.x - rect.min.x - pad_x - 10.0).max(100.0);
+        let raw_title = get_smart_title(passage);
+        let title_font = FontId::proportional(13.5);
 
         let title_color = if is_selected {
             theme.accent
         } else if is_hovered {
             theme.text_active
         } else {
-            Color32::from_rgb(230, 234, 240)
+            Color32::from_rgb(220, 225, 232)
         };
+
+        // Layout with clipping or ellipsis if exceeding available width
+        let mut display_title = raw_title;
+        while display_title.chars().count() > 8 && ui.painter().layout_no_wrap(display_title.clone(), title_font.clone(), Color32::WHITE).size().x > available_title_w {
+            let len = display_title.chars().count();
+            display_title = format!("{}...", display_title.chars().take(len.saturating_sub(5)).collect::<String>());
+        }
 
         painter.text(
             Pos2::new(rect.min.x + pad_x, center_y),
             egui::Align2::LEFT_CENTER,
-            title_text,
-            FontId::proportional(14.0),
+            display_title,
+            title_font,
             title_color,
         );
 
-        ui.add_space(4.0); // py-3 to py-4 vertical spacing between items
+        ui.add_space(2.0);
         action
     }
 }
 
-/// Smart title logic from prompt:
-/// If title length < 10 chars OR title is in generic list ["custom", "test", "passage", etc.],
+/// Smart title logic:
+/// If title length < 10 chars OR title is generic ("custom", "test", etc.),
 /// use the first few words of the passage content (~40 characters) as context!
 fn get_smart_title(passage: &DbPassage) -> String {
     let raw = passage.category.trim();

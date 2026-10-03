@@ -1,3 +1,8 @@
+pub mod typing_backup;
+pub mod typing_import;
+
+use self::typing_backup::TypingBackup;
+use self::typing_import::TypingImport;
 use crate::auth::LocalAuth;
 use crate::data::AppConfig;
 use crate::db::{DatabaseConnection, DbQueries, User};
@@ -12,7 +17,18 @@ pub enum AuthMode {
     Register,
 }
 
-#[derive(Default)]
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SyncOp {
+    Idle,
+    Exporting,
+    Importing,
+    Completed(String),
+    Failed(String),
+}
+
 pub struct ProfileTabState {
     pub auth_mode: AuthMode,
     pub username_input: String,
@@ -23,11 +39,27 @@ pub struct ProfileTabState {
     pub show_delete_confirm: bool,
     pub show_truncate_confirm: bool,
     pub truncate_status: Option<String>,
+    pub sync_op: Arc<std::sync::Mutex<SyncOp>>,
+    pub sync_progress: Arc<AtomicUsize>,
+    pub sync_cancel: Arc<AtomicBool>,
 }
 
-impl Default for AuthMode {
+impl Default for ProfileTabState {
     fn default() -> Self {
-        AuthMode::SignIn
+        Self {
+            auth_mode: AuthMode::SignIn,
+            username_input: String::new(),
+            password_input: String::new(),
+            confirm_password_input: String::new(),
+            auth_error: None,
+            auth_success: None,
+            show_delete_confirm: false,
+            show_truncate_confirm: false,
+            truncate_status: None,
+            sync_op: Arc::new(std::sync::Mutex::new(SyncOp::Idle)),
+            sync_progress: Arc::new(AtomicUsize::new(0)),
+            sync_cancel: Arc::new(AtomicBool::new(false)),
+        }
     }
 }
 
@@ -420,12 +452,98 @@ impl ProfileTab {
                     ui.label(RichText::new("DATABASE & STORAGE MANAGEMENT").color(theme.text_dim).size(10.5).monospace());
                     ui.add_space(6.0);
                     ui.label(
-                        RichText::new("Reset text passages and custom library texts back to clean curated 25 & 40 word natural prose passages without affecting your profile or scores.")
+                        RichText::new("Backup and restore your custom passages and typing sentences, or reset text passages back to clean curated prose.")
                             .color(theme.text_dim)
                             .size(11.0)
                             .monospace(),
                     );
                     ui.add_space(12.0);
+
+                    let sync_op_guard = state.sync_op.lock().unwrap();
+                    let current_sync = sync_op_guard.clone();
+                    drop(sync_op_guard);
+
+                    match current_sync {
+                        SyncOp::Exporting => {
+                            let prog = state.sync_progress.load(Ordering::Relaxed);
+                            let status_frame = egui::Frame::none()
+                                .fill(theme.bg)
+                                .stroke(egui::Stroke::new(1.0, theme.accent))
+                                .rounding(6.0)
+                                .inner_margin(egui::Margin::symmetric(12.0, 8.0));
+                            status_frame.show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.spinner();
+                                    ui.add_space(8.0);
+                                     ui.label(
+                                        RichText::new(format!("Streaming sentences to file... ({prog} records written)"))
+                                            .color(theme.accent)
+                                            .strong()
+                                            .monospace()
+                                            .size(11.5),
+                                    );
+                                });
+                            });
+                            ui.ctx().request_repaint_after(std::time::Duration::from_millis(80));
+                            ui.add_space(10.0);
+                        }
+                        SyncOp::Importing => {
+                            let prog = state.sync_progress.load(Ordering::Relaxed);
+                            let status_frame = egui::Frame::none()
+                                .fill(theme.bg)
+                                .stroke(egui::Stroke::new(1.0, theme.accent))
+                                .rounding(6.0)
+                                .inner_margin(egui::Margin::symmetric(12.0, 8.0));
+                            status_frame.show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.spinner();
+                                    ui.add_space(8.0);
+                                    ui.label(
+                                        RichText::new(format!("Streaming sentences into database... ({prog} records imported)"))
+                                            .color(theme.accent)
+                                            .strong()
+                                            .monospace()
+                                            .size(11.5),
+                                    );
+                                });
+                            });
+                            ui.ctx().request_repaint_after(std::time::Duration::from_millis(80));
+                            ui.add_space(10.0);
+                        }
+                        SyncOp::Completed(ref msg) => {
+                            let status_frame = egui::Frame::none()
+                                .fill(Color32::from_rgba_unmultiplied(16, 185, 129, 25))
+                                .stroke(egui::Stroke::new(1.0, Color32::from_rgb(16, 185, 129)))
+                                .rounding(6.0)
+                                .inner_margin(egui::Margin::symmetric(10.0, 6.0));
+                            status_frame.show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(format!("✓  {msg}"))
+                                        .color(Color32::from_rgb(52, 211, 153))
+                                        .size(11.5)
+                                        .monospace(),
+                                );
+                            });
+                            ui.add_space(10.0);
+                        }
+                        SyncOp::Failed(ref err) => {
+                            let err_frame = egui::Frame::none()
+                                .fill(Color32::from_rgba_unmultiplied(239, 68, 68, 25))
+                                .stroke(egui::Stroke::new(1.0, Color32::from_rgb(239, 68, 68)))
+                                .rounding(6.0)
+                                .inner_margin(egui::Margin::symmetric(10.0, 6.0));
+                            err_frame.show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(format!("⚠  {err}"))
+                                        .color(Color32::from_rgb(255, 92, 92))
+                                        .size(11.5)
+                                        .monospace(),
+                                );
+                            });
+                            ui.add_space(10.0);
+                        }
+                        SyncOp::Idle => {}
+                    }
 
                     if let Some(msg) = &state.truncate_status {
                         let status_frame = egui::Frame::none()
@@ -444,9 +562,77 @@ impl ProfileTab {
                         ui.add_space(10.0);
                     }
 
-                    if UnifiedButton::show(ui, "⚠ Reset & Truncate Passages", ButtonVariant::Danger, theme, 240.0).clicked() {
-                        state.show_truncate_confirm = true;
-                    }
+                    let is_syncing = matches!(current_sync, SyncOp::Exporting | SyncOp::Importing);
+
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(10.0, 0.0);
+
+                        if !is_syncing {
+                            if UnifiedButton::show(ui, "Backup Data", ButtonVariant::Secondary, theme, 120.0).clicked() {
+                                let file_opt = rfd::FileDialog::new()
+                                    .set_title("Export Typing Sentences")
+                                    .set_file_name("velotype_sentences.json")
+                                    .add_filter("JSON Document (*.json)", &["json"])
+                                    .save_file();
+
+                                if let Some(path) = file_opt {
+                                    let db_clone = db.clone();
+                                    let op_arc = Arc::clone(&state.sync_op);
+                                    let prog_arc = Arc::clone(&state.sync_progress);
+                                    let cancel_arc = Arc::clone(&state.sync_cancel);
+                                    prog_arc.store(0, Ordering::Relaxed);
+                                    cancel_arc.store(false, Ordering::Relaxed);
+                                    *op_arc.lock().unwrap() = SyncOp::Exporting;
+
+                                    std::thread::spawn(move || {
+                                        match TypingBackup::export_to_file(&db_clone, &path, Some(prog_arc), Some(cancel_arc)) {
+                                            Ok(count) => {
+                                                *op_arc.lock().unwrap() = SyncOp::Completed(format!("Exported {count} typing sentences successfully."));
+                                            }
+                                            Err(e) => {
+                                                *op_arc.lock().unwrap() = SyncOp::Failed(e);
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+
+                            if UnifiedButton::show(ui, "Import Data", ButtonVariant::Secondary, theme, 120.0).clicked() {
+                                let file_opt = rfd::FileDialog::new()
+                                    .set_title("Import Typing Sentences")
+                                    .add_filter("JSON Document (*.json)", &["json"])
+                                    .pick_file();
+
+                                if let Some(path) = file_opt {
+                                    let db_clone = db.clone();
+                                    let user_id = current_user.as_ref().map(|u| u.id);
+                                    let op_arc = Arc::clone(&state.sync_op);
+                                    let prog_arc = Arc::clone(&state.sync_progress);
+                                    let cancel_arc = Arc::clone(&state.sync_cancel);
+                                    prog_arc.store(0, Ordering::Relaxed);
+                                    cancel_arc.store(false, Ordering::Relaxed);
+                                    *op_arc.lock().unwrap() = SyncOp::Importing;
+
+                                    std::thread::spawn(move || {
+                                        match TypingImport::import_from_file(&db_clone, user_id, &path, Some(prog_arc), Some(cancel_arc)) {
+                                            Ok(count) => {
+                                                *op_arc.lock().unwrap() = SyncOp::Completed(format!("Imported {count} typing sentences successfully."));
+                                            }
+                                            Err(e) => {
+                                                *op_arc.lock().unwrap() = SyncOp::Failed(e);
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+
+                            if UnifiedButton::show(ui, "⚠ Reset & Truncate Passages", ButtonVariant::Danger, theme, 220.0).clicked() {
+                                state.show_truncate_confirm = true;
+                            }
+                        } else {
+                            ui.label(RichText::new("Background data streaming in progress...").color(theme.text_dim).monospace().size(11.0));
+                        }
+                    });
                 });
             });
 

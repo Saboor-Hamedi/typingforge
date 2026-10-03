@@ -104,9 +104,11 @@ impl AppUpdater {
         }
 
         thread::spawn(move || {
-            let api_url = "https://api.github.com/repos/Saboor-Hamedi/typingforge/releases/latest";
+            let api_url = "https://api.github.com/repos/Saboor-Hamedi/typingforge/releases";
 
-            let mut cmd = Command::new("curl");
+            let curl_prog = if cfg!(target_os = "windows") { "curl.exe" } else { "curl" };
+            let mut cmd = Command::new(curl_prog);
+            cmd.stdin(std::process::Stdio::null());
             #[cfg(target_os = "windows")]
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: suppress console window
             let out = cmd
@@ -121,60 +123,77 @@ impl AppUpdater {
             match out {
                 Ok(res) if res.status.success() => {
                     let json_str = String::from_utf8_lossy(&res.stdout);
-                    match serde_json::from_str::<GitHubRelease>(&json_str) {
-                        Ok(release) => {
-                            let remote_ver = release.tag_name.trim_start_matches('v').to_string();
-                            let is_newer = is_version_newer(&remote_ver, &curr_ver);
+                    match serde_json::from_str::<Vec<GitHubRelease>>(&json_str) {
+                        Ok(releases) => {
+                            // Find the newest release available by comparing semantic version tags
+                            let mut newest_release: Option<(String, GitHubRelease)> = None;
+                            for r in releases {
+                                let remote_ver = r.tag_name.trim_start_matches('v').to_string();
+                                if let Some((ref cur_best, _)) = newest_release {
+                                    if is_version_newer(&remote_ver, cur_best) {
+                                        newest_release = Some((remote_ver, r));
+                                    }
+                                } else {
+                                    newest_release = Some((remote_ver, r));
+                                }
+                            }
 
-                            if is_newer {
-                                let os = std::env::consts::OS;
-                                let mut matched_asset = None;
+                            if let Some((remote_ver, release)) = newest_release {
+                                let is_newer = is_version_newer(&remote_ver, &curr_ver);
 
-                                for asset in &release.assets {
-                                    if os == "windows" {
-                                        if asset.name.ends_with(".exe") && asset.name.contains("setup") {
+                                if is_newer {
+                                    let os = std::env::consts::OS;
+                                    let mut matched_asset = None;
+
+                                    for asset in &release.assets {
+                                        if os == "windows" {
+                                            if asset.name.ends_with(".exe") && asset.name.contains("setup") {
+                                                matched_asset = Some(asset.clone());
+                                                break;
+                                            } else if asset.name.ends_with(".exe") || asset.name.ends_with(".zip") {
+                                                matched_asset = Some(asset.clone());
+                                            }
+                                        } else if os == "macos" && (asset.name.contains("macos") || asset.name.ends_with(".tar.gz") || asset.name.ends_with(".zip")) {
                                             matched_asset = Some(asset.clone());
                                             break;
-                                        } else if asset.name.ends_with(".exe") || asset.name.ends_with(".zip") {
+                                        } else if os == "linux" && (asset.name.contains("linux") || asset.name.ends_with(".tar.gz") || asset.name.ends_with(".zip")) {
                                             matched_asset = Some(asset.clone());
+                                            break;
                                         }
-                                    } else if os == "macos" && asset.name.contains("macos") && asset.name.ends_with(".tar.gz") {
-                                        matched_asset = Some(asset.clone());
-                                        break;
-                                    } else if os == "linux" && asset.name.contains("linux") && asset.name.ends_with(".tar.gz") {
-                                        matched_asset = Some(asset.clone());
-                                        break;
                                     }
-                                }
 
-                                let asset_size = matched_asset.as_ref().and_then(|a| a.size).unwrap_or(0);
-                                let rel_info = ReleaseInfo {
-                                    version: remote_ver.clone(),
-                                    tag_name: release.tag_name.clone(),
-                                    html_url: release.html_url.clone(),
-                                    release_notes: release.body.unwrap_or_default(),
-                                    asset_url: matched_asset.as_ref().map(|a| a.browser_download_url.clone()),
-                                    asset_name: matched_asset.as_ref().map(|a| a.name.clone()),
-                                    asset_size,
-                                };
+                                    let asset_size = matched_asset.as_ref().and_then(|a| a.size).unwrap_or(0);
+                                    let rel_info = ReleaseInfo {
+                                        version: remote_ver.clone(),
+                                        tag_name: release.tag_name.clone(),
+                                        html_url: release.html_url.clone(),
+                                        release_notes: release.body.unwrap_or_default(),
+                                        asset_url: matched_asset.as_ref().map(|a| a.browser_download_url.clone()),
+                                        asset_name: matched_asset.as_ref().map(|a| a.name.clone()),
+                                        asset_size,
+                                    };
 
-                                {
-                                    let mut r = release_arc.lock().unwrap();
-                                    *r = Some(rel_info.clone());
-                                }
+                                    {
+                                        let mut r = release_arc.lock().unwrap();
+                                        *r = Some(rel_info.clone());
+                                    }
 
-                                if silent_download && rel_info.asset_url.is_some() {
-                                    Self::perform_download(status_arc, rel_info);
+                                    if silent_download && rel_info.asset_url.is_some() {
+                                        Self::perform_download(status_arc, rel_info);
+                                    } else {
+                                        let mut s = status_arc.lock().unwrap();
+                                        *s = UpdateStatus::UpdateAvailable(remote_ver);
+                                    }
                                 } else {
                                     let mut s = status_arc.lock().unwrap();
-                                    *s = UpdateStatus::UpdateAvailable(remote_ver);
+                                    *s = UpdateStatus::UpToDate;
+                                    if let Ok(mut t) = up_to_date_time_arc.lock() {
+                                        *t = Some(std::time::Instant::now());
+                                    }
                                 }
                             } else {
                                 let mut s = status_arc.lock().unwrap();
                                 *s = UpdateStatus::UpToDate;
-                                if let Ok(mut t) = up_to_date_time_arc.lock() {
-                                    *t = Some(std::time::Instant::now());
-                                }
                             }
                         }
                         Err(e) => {
@@ -233,7 +252,11 @@ impl AppUpdater {
             // Clean previous partial download if present
             let _ = std::fs::remove_file(&target_file);
 
-            let mut cmd = Command::new("curl");
+            let curl_prog = if cfg!(target_os = "windows") { "curl.exe" } else { "curl" };
+            let mut cmd = Command::new(curl_prog);
+            cmd.stdin(std::process::Stdio::null());
+            cmd.stdout(std::process::Stdio::null());
+            cmd.stderr(std::process::Stdio::null());
             #[cfg(target_os = "windows")]
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: suppress console window
             let child_res = cmd
@@ -312,10 +335,17 @@ impl AppUpdater {
             let os = std::env::consts::OS;
             if os == "windows" {
                 if installer_path.extension().and_then(|s| s.to_str()).map(|ext| ext.eq_ignore_ascii_case("exe")).unwrap_or(false) {
-                    let _ = Command::new(&installer_path).spawn();
+                    let mut cmd = Command::new(&installer_path);
+                    cmd.stdin(std::process::Stdio::null());
+                    #[cfg(target_os = "windows")]
+                    cmd.creation_flags(0x08000000);
+                    let _ = cmd.spawn();
                     std::process::exit(0);
                 } else {
-                    let _ = Command::new("explorer").arg(format!("/select,{}", installer_path.display())).spawn();
+                    let mut cmd = Command::new("explorer");
+                    #[cfg(target_os = "windows")]
+                    cmd.creation_flags(0x08000000);
+                    let _ = cmd.arg(format!("/select,{}", installer_path.display())).spawn();
                 }
             } else if let Some(ref rel) = *self.release_info.lock().unwrap() {
                 // On macOS / Linux, open the release download URL

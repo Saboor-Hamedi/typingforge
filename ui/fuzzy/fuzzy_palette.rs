@@ -68,7 +68,7 @@ impl FuzzyPalette {
             self.selected_index = 0;
         } else if let Ok(res) = DbQueries::search_passages(db, trimmed) {
             self.results = res;
-            if self.selected_index >= self.results.len().min(5) {
+            if self.selected_index >= self.results.len() {
                 self.selected_index = 0;
             }
         }
@@ -111,14 +111,14 @@ impl FuzzyPalette {
             return None;
         }
 
-        let displayed_count = self.results.len().min(5);
-        if displayed_count > 0 {
+        let result_count = self.results.len();
+        if result_count > 0 {
             if ctx.input(|i| i.key_pressed(Key::ArrowDown)) {
-                self.selected_index = (self.selected_index + 1) % displayed_count;
+                self.selected_index = (self.selected_index + 1) % result_count;
             }
             if ctx.input(|i| i.key_pressed(Key::ArrowUp)) {
                 if self.selected_index == 0 {
-                    self.selected_index = displayed_count - 1;
+                    self.selected_index = result_count - 1;
                 } else {
                     self.selected_index -= 1;
                 }
@@ -133,22 +133,26 @@ impl FuzzyPalette {
         }
 
         // 3. Spotlight Centered Modal Window
-        // When query is empty: ONLY sleek input appears! (~68px)
-        // When searching: 5 results appear in body of the fuzzy modal!
+        // Fixed position (centered on screen horizontally, fixed top offset).
+        // Fixed maximum height: max-h-[60vh].
+        // Prevents any jumping when typing. Internal list scrolls smoothly.
         let has_results = !self.query.trim().is_empty();
-        let modal_w = 600.0_f32.min(screen_rect.width() - 40.0);
+        let modal_w = 620.0_f32.min(screen_rect.width() - 40.0);
+        let max_modal_h = (screen_rect.height() * 0.60).min(560.0);
 
+        let modal_top = (screen_rect.height() * 0.18).max(50.0); // Constant top: NEVER jumps!
+        let modal_left = (screen_rect.width() - modal_w) * 0.5;
+
+        let overhead_h = 48.0 + 24.0 + 13.0 + 30.0; // Input(48) + Pad(24) + Divider(13) + Footer(30)
         let modal_h = if !has_results {
-            68.0_f32 // Just the sleek input pill floating
+            72.0_f32 // Compact sleek command bar
         } else if self.results.is_empty() {
             135.0_f32 // Input + "No matching passages" message
         } else {
-            // Input (56) + divider (1) + padding + 5 results (5 * 50) + footer (32)
-            (68.0 + (displayed_count as f32 * 50.0) + 38.0).min(screen_rect.height() - 80.0)
+            let needed_h = overhead_h + (result_count as f32 * 46.0);
+            needed_h.min(max_modal_h)
         };
 
-        let modal_top = (screen_rect.height() - modal_h) * 0.28; // Spotlight placement (top-center)
-        let modal_left = (screen_rect.width() - modal_w) * 0.5;
         let modal_rect = Rect::from_min_size(Pos2::new(modal_left, modal_top), Vec2::new(modal_w, modal_h));
 
         egui::Area::new(egui::Id::new("fuzzy_palette_modal"))
@@ -157,9 +161,9 @@ impl FuzzyPalette {
             .show(ctx, |ui| {
                 let p = ui.painter();
                 // Outer soft shadow & sleek modal card background
-                p.rect_filled(modal_rect.expand(4.0), 14.0, Color32::from_black_alpha(50));
-                p.rect_filled(modal_rect, 14.0, theme.bg);
-                p.rect_stroke(modal_rect, 14.0, Stroke::new(1.0, theme.border.linear_multiply(0.85)));
+                p.rect_filled(modal_rect.expand(4.0), 12.0, Color32::from_black_alpha(60));
+                p.rect_filled(modal_rect, 12.0, theme.bg);
+                p.rect_stroke(modal_rect, 12.0, Stroke::new(1.0, theme.border.linear_multiply(0.85)));
 
                 let pad = 12.0;
                 let content_rect = modal_rect.shrink(pad);
@@ -170,7 +174,7 @@ impl FuzzyPalette {
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
 
-                // 3a. Sleek Floating Borderless Search Input
+                // 3a. Sleek Floating Borderless Search Input (48px)
                 let request_focus = self.request_focus_input;
                 self.request_focus_input = false;
 
@@ -179,10 +183,10 @@ impl FuzzyPalette {
                     self.refresh_results(db);
                 }
 
-                // 3b. Results Body (ONLY appears when searching!)
+                // 3b. Results Body with Internal Scrolling
                 if has_results {
                     child_ui.add_space(4.0);
-                    // Very subtle 1px divider between input and results
+                    // 1px subtle divider
                     let (div_rect, _) = child_ui.allocate_exact_size(Vec2::new(child_ui.available_width(), 1.0), Sense::hover());
                     child_ui.painter().rect_filled(div_rect, 0.0, Color32::from_white_alpha(18));
                     child_ui.add_space(8.0);
@@ -197,26 +201,31 @@ impl FuzzyPalette {
                             );
                         });
                     } else {
-                        // Take up to 5 results only as requested
-                        for (idx, passage) in self.results.iter().take(5).enumerate() {
-                            let is_selected = idx == self.selected_index;
-                            match FuzzyResultItem::show(&mut child_ui, passage, is_selected, theme) {
-                                ResultItemAction::Select => {
-                                    emitted_action = Some(PaletteAction::SelectPassage(passage.clone()));
-                                    self.close();
-                                    break;
+                        let scroll_h = (modal_h - overhead_h).max(46.0);
+                        egui::ScrollArea::vertical()
+                            .max_height(scroll_h)
+                            .auto_shrink([false, false])
+                            .show(&mut child_ui, |scroll_ui| {
+                                for (idx, passage) in self.results.iter().enumerate() {
+                                    let is_selected = idx == self.selected_index;
+                                    match FuzzyResultItem::show(scroll_ui, passage, is_selected, theme) {
+                                        ResultItemAction::Select => {
+                                            emitted_action = Some(PaletteAction::SelectPassage(passage.clone()));
+                                            self.close();
+                                            break;
+                                        }
+                                        ResultItemAction::Edit => {
+                                            emitted_action = Some(PaletteAction::EditPassage(passage.clone()));
+                                            self.close();
+                                            break;
+                                        }
+                                        ResultItemAction::None => {}
+                                    }
                                 }
-                                ResultItemAction::Edit => {
-                                    emitted_action = Some(PaletteAction::EditPassage(passage.clone()));
-                                    self.close();
-                                    break;
-                                }
-                                ResultItemAction::None => {}
-                            }
-                        }
+                            });
 
                         // 3c. Minimal Footer with keyboard hints
-                        child_ui.add_space(6.0);
+                        child_ui.add_space(4.0);
                         let (footer_rect, _) = child_ui.allocate_exact_size(Vec2::new(child_ui.available_width(), 20.0), Sense::hover());
                         let fp = child_ui.painter_at(footer_rect);
                         fp.line_segment(
@@ -230,7 +239,7 @@ impl FuzzyPalette {
                             egui::Align2::LEFT_CENTER,
                             footer_text,
                             FontId::monospace(10.0),
-                            theme.text_dim.linear_multiply(0.8),
+                            theme.text_dim.linear_multiply(0.75),
                         );
                     }
                 }
