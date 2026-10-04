@@ -1,6 +1,6 @@
 [package]
 name = "forgetyping"
-version = "0.1.17"
+version = "0.1.18"
 edition = "2021"
 authors = ["Saboor Hamedi <saboorhamedi49@gmail.com>"]
 description = "A kinetic, ultra-juicy desktop typing game with spring caret physics and real-time velocity graph"
