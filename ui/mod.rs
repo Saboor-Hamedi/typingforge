@@ -15,8 +15,6 @@ pub use confirm::ConfirmModal;
 pub use fuzzy::{FuzzyPalette, PaletteAction};
 pub use header::{HeaderScreen, HeaderWidget};
 pub use panels::{EditorPanel, ResultsView, SettingsPanel, TypingView};
-pub use results::ResultsScreen;
-pub use settings::SettingsScreen;
 pub use theme::{Theme, ThemeId};
 pub use typing_area::TypingAreaWidget;
 pub use updater::{AppUpdater, UpdateStatus};

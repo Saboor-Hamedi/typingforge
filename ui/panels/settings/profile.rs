@@ -141,21 +141,9 @@ impl ProfileTab {
                         ui.separator();
                         ui.add_space(14.0);
 
-                        // Fetch Stats Summary from DB
-                        let sessions_res = DbQueries::get_recent_sessions(db, Some(user.id), 100);
-                        let (test_count, avg_wpm, best_wpm) = match sessions_res {
-                            Ok(sessions) => {
-                                let count = sessions.len();
-                                if count > 0 {
-                                    let sum_wpm: f32 = sessions.iter().map(|s| s.wpm as f32).sum();
-                                    let max_wpm: f32 = sessions.iter().map(|s| s.wpm as f32).fold(0.0_f32, f32::max);
-                                    (count, sum_wpm / count as f32, max_wpm)
-                                } else {
-                                    (0, 0.0, 0.0)
-                                }
-                            }
-                            Err(_) => (0, 0.0, 0.0),
-                        };
+                        // Fetch Stats Summary from DB via single $O(1)$ SQL aggregate
+                        let (test_count, avg_wpm, best_wpm) = DbQueries::get_user_stats_summary(db, Some(user.id))
+                            .unwrap_or((0, 0.0, 0.0));
 
                         // Stats spread evenly across full card width
                         ui.horizontal(|ui| {
@@ -459,7 +447,7 @@ impl ProfileTab {
                     );
                     ui.add_space(12.0);
 
-                    let sync_op_guard = state.sync_op.lock().unwrap();
+                    let sync_op_guard = state.sync_op.lock().unwrap_or_else(|p| p.into_inner());
                     let current_sync = sync_op_guard.clone();
                     drop(sync_op_guard);
 
@@ -475,13 +463,17 @@ impl ProfileTab {
                                 ui.horizontal(|ui| {
                                     ui.spinner();
                                     ui.add_space(8.0);
-                                     ui.label(
+                                    ui.label(
                                         RichText::new(format!("Streaming sentences to file... ({prog} records written)"))
                                             .color(theme.accent)
                                             .strong()
                                             .monospace()
                                             .size(11.5),
                                     );
+                                    ui.add_space(12.0);
+                                    if ui.button(RichText::new("Cancel").color(Color32::from_rgb(239, 68, 68)).monospace().size(11.0)).clicked() {
+                                        state.sync_cancel.store(true, Ordering::Relaxed);
+                                    }
                                 });
                             });
                             ui.ctx().request_repaint_after(std::time::Duration::from_millis(80));
@@ -505,6 +497,10 @@ impl ProfileTab {
                                             .monospace()
                                             .size(11.5),
                                     );
+                                    ui.add_space(12.0);
+                                    if ui.button(RichText::new("Cancel").color(Color32::from_rgb(239, 68, 68)).monospace().size(11.0)).clicked() {
+                                        state.sync_cancel.store(true, Ordering::Relaxed);
+                                    }
                                 });
                             });
                             ui.ctx().request_repaint_after(std::time::Duration::from_millis(80));
@@ -643,7 +639,7 @@ impl ProfileTab {
                     theme,
                     "RESET PASSAGES DATABASE",
                     "Database Reset",
-                    "Are you sure you want to reset the passages database?\n\nThis will purge corrupted or unwanted text passages and re-seed clean 25 & 40 word natural prose passages.\n\nYour user profile, account, and high scores will remain completely intact.",
+                    "Are you sure you want to reset the passages database?\n\nThis will purge corrupted or unwanted text passages and re-seed clean 25 & 40 word natural prose passages.\n\nYour user profile, account, and personal best records will remain completely intact.",
                     "Reset Passages",
                 ) {
                     if confirmed {

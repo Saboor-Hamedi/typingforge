@@ -153,16 +153,17 @@ impl TypingImport {
                     "INSERT INTO texts (title, content, char_count, source, created_by, created_at) VALUES (?1, ?2, ?3, 'user_paste', ?4, ?5)",
                 )?;
                 let mut ins_text_fts = tx.prepare(
-                    "INSERT INTO texts_fts (title, content) VALUES (?1, ?2)",
+                    "INSERT INTO texts_fts (rowid, title, content) VALUES (?1, ?2, ?3)",
                 )?;
 
                 for (text, word_count, cat, created_at) in items.drain(..) {
                     let char_count = text.chars().count() as i64;
                     ins_passage.execute(params![&text, word_count, &cat, created_at])?;
                     let pid = tx.last_insert_rowid();
-                    let _ = ins_passage_fts.execute(params![pid, &text, &cat]);
+                    ins_passage_fts.execute(params![pid, &text, &cat])?;
                     ins_text.execute(params![&cat, &text, char_count, user_id, created_at])?;
-                    let _ = ins_text_fts.execute(params![&cat, &text]);
+                    let tid = tx.last_insert_rowid();
+                    ins_text_fts.execute(params![tid, &cat, &text])?;
                 }
             }
             tx.commit()?;
@@ -247,6 +248,12 @@ impl TypingImport {
         progress: Option<Arc<AtomicUsize>>,
         cancel: Option<Arc<AtomicBool>>,
     ) -> Result<usize, String> {
+        let meta = std::fs::metadata(path).map_err(|e| format!("Could not read file metadata: {e}"))?;
+        const MAX_IMPORT_SIZE: u64 = 100 * 1024 * 1024; // 100 MB safety limit
+        if meta.len() > MAX_IMPORT_SIZE {
+            return Err(format!("Import file exceeds maximum allowed limit ({} MB)", MAX_IMPORT_SIZE / (1024 * 1024)));
+        }
+
         let file = File::open(path).map_err(|e| format!("Could not open file: {e}"))?;
         let reader = BufReader::with_capacity(256 * 1024, file);
         Self::import_from_reader(db, user_id, reader, progress, cancel)

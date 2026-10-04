@@ -39,8 +39,15 @@ impl HeaderWidget {
         let total_w = header_rect.width();
         let bar_rect = Rect::from_min_size(header_rect.min, Vec2::new(total_w, Self::HEIGHT));
 
-        // Window drag & double-click maximize interaction across the header bar
-        let drag_response = ui.interact(bar_rect, ui.id().with("window_drag"), egui::Sense::click_and_drag());
+        // Window drag & double-click maximize interaction across header:
+        // Safely exclude the center mode switcher buttons and right action controls so clicks aren't intercepted.
+        let drag_w = if screen == HeaderScreen::Typing {
+            (bar_rect.center().x - bar_rect.min.x - 130.0).max(60.0)
+        } else {
+            (total_w - 320.0).max(120.0)
+        };
+        let drag_rect = Rect::from_min_size(header_rect.min, Vec2::new(drag_w, Self::HEIGHT));
+        let drag_response = ui.interact(drag_rect, ui.id().with("window_drag"), egui::Sense::click_and_drag());
         if drag_response.double_clicked() {
             let is_max = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
             ctx.send_viewport_cmd(ViewportCommand::Maximized(!is_max));
@@ -183,75 +190,80 @@ impl HeaderWidget {
             }
 
             // 3. RIGHT CONTROLS: Windows titlebar buttons on far right (Min, Max, Close)
+            // Kept at full opacity even during typing focus mode
             let win_ctrl_w = 38.0;
-            let close_rect = Rect::from_min_max(
-                Pos2::new(bar_rect.max.x - win_ctrl_w, bar_rect.min.y),
-                Pos2::new(bar_rect.max.x, bar_rect.max.y),
-            );
-            let max_rect = Rect::from_min_max(
-                Pos2::new(bar_rect.max.x - win_ctrl_w * 2.0, bar_rect.min.y),
-                Pos2::new(bar_rect.max.x - win_ctrl_w, bar_rect.max.y),
-            );
-            let min_rect = Rect::from_min_max(
-                Pos2::new(bar_rect.max.x - win_ctrl_w * 3.0, bar_rect.min.y),
-                Pos2::new(bar_rect.max.x - win_ctrl_w * 2.0, bar_rect.max.y),
-            );
+            ui.scope(|ui| {
+                ui.set_opacity(1.0);
+                let win_painter = ui.painter_at(bar_rect);
+                let close_rect = Rect::from_min_max(
+                    Pos2::new(bar_rect.max.x - win_ctrl_w, bar_rect.min.y),
+                    Pos2::new(bar_rect.max.x, bar_rect.max.y),
+                );
+                let max_rect = Rect::from_min_max(
+                    Pos2::new(bar_rect.max.x - win_ctrl_w * 2.0, bar_rect.min.y),
+                    Pos2::new(bar_rect.max.x - win_ctrl_w, bar_rect.max.y),
+                );
+                let min_rect = Rect::from_min_max(
+                    Pos2::new(bar_rect.max.x - win_ctrl_w * 3.0, bar_rect.min.y),
+                    Pos2::new(bar_rect.max.x - win_ctrl_w * 2.0, bar_rect.max.y),
+                );
 
-            let close_resp = ui.interact(close_rect, ui.id().with("hdr_btn_close"), egui::Sense::click());
-            let max_resp = ui.interact(max_rect, ui.id().with("hdr_btn_max"), egui::Sense::click());
-            let min_resp = ui.interact(min_rect, ui.id().with("hdr_btn_min"), egui::Sense::click());
+                let close_resp = ui.interact(close_rect, ui.id().with("hdr_btn_close"), egui::Sense::click());
+                let max_resp = ui.interact(max_rect, ui.id().with("hdr_btn_max"), egui::Sense::click());
+                let min_resp = ui.interact(min_rect, ui.id().with("hdr_btn_min"), egui::Sense::click());
 
-            let is_max = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-            let close_rounding = if is_max {
-                egui::Rounding::ZERO
-            } else {
-                egui::Rounding {
-                    nw: 0.0,
-                    ne: 14.0,
-                    se: 0.0,
-                    sw: 0.0,
+                let is_max = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                let close_rounding = if is_max {
+                    egui::Rounding::ZERO
+                } else {
+                    egui::Rounding {
+                        nw: 0.0,
+                        ne: 14.0,
+                        se: 0.0,
+                        sw: 0.0,
+                    }
+                };
+
+                // Close button (Windows red on hover with matching top-right window corner radius)
+                if close_resp.hovered() {
+                    win_painter.rect_filled(close_rect, close_rounding, Color32::from_rgb(232, 17, 35));
                 }
-            };
+                let close_stroke = if close_resp.hovered() { Color32::WHITE } else { theme.text_dim };
+                let cc = close_rect.center();
+                win_painter.line_segment([cc - Vec2::splat(4.0), cc + Vec2::splat(4.0)], Stroke::new(1.1, close_stroke));
+                win_painter.line_segment([Pos2::new(cc.x - 4.0, cc.y + 4.0), Pos2::new(cc.x + 4.0, cc.y - 4.0)], Stroke::new(1.1, close_stroke));
 
-            // Close button (Windows red on hover with matching top-right window corner radius)
-            if close_resp.hovered() {
-                painter.rect_filled(close_rect, close_rounding, Color32::from_rgb(232, 17, 35));
-            }
-            let close_stroke = if close_resp.hovered() { Color32::WHITE } else { theme.text_dim };
-            let cc = close_rect.center();
-            painter.line_segment([cc - Vec2::splat(4.0), cc + Vec2::splat(4.0)], Stroke::new(1.1, close_stroke));
-            painter.line_segment([Pos2::new(cc.x - 4.0, cc.y + 4.0), Pos2::new(cc.x + 4.0, cc.y - 4.0)], Stroke::new(1.1, close_stroke));
+                // Maximize / Restore button
+                if max_resp.hovered() {
+                    win_painter.rect_filled(max_rect, 0.0, Color32::from_white_alpha(20));
+                }
+                let max_stroke = if max_resp.hovered() { theme.text_active } else { theme.text_dim };
+                let mc = max_rect.center();
+                if is_max {
+                    win_painter.rect_stroke(Rect::from_center_size(mc + Vec2::new(1.5, -1.5), Vec2::splat(7.0)), 0.0, Stroke::new(1.0, max_stroke));
+                    win_painter.rect_stroke(Rect::from_center_size(mc + Vec2::new(-1.5, 1.5), Vec2::splat(7.0)), 0.0, Stroke::new(1.0, max_stroke));
+                } else {
+                    win_painter.rect_stroke(Rect::from_center_size(mc, Vec2::splat(8.0)), 0.0, Stroke::new(1.0, max_stroke));
+                }
 
-            // Maximize / Restore button
-            if max_resp.hovered() {
-                painter.rect_filled(max_rect, 0.0, Color32::from_white_alpha(20));
-            }
-            let max_stroke = if max_resp.hovered() { theme.text_active } else { theme.text_dim };
-            let mc = max_rect.center();
-            if is_max {
-                painter.rect_stroke(Rect::from_center_size(mc + Vec2::new(1.5, -1.5), Vec2::splat(7.0)), 0.0, Stroke::new(1.0, max_stroke));
-                painter.rect_stroke(Rect::from_center_size(mc + Vec2::new(-1.5, 1.5), Vec2::splat(7.0)), 0.0, Stroke::new(1.0, max_stroke));
-            } else {
-                painter.rect_stroke(Rect::from_center_size(mc, Vec2::splat(8.0)), 0.0, Stroke::new(1.0, max_stroke));
-            }
+                // Minimize button
+                if min_resp.hovered() {
+                    win_painter.rect_filled(min_rect, 0.0, Color32::from_white_alpha(20));
+                }
+                let min_stroke = if min_resp.hovered() { theme.text_active } else { theme.text_dim };
+                let mic = min_rect.center();
+                win_painter.line_segment([Pos2::new(mic.x - 4.0, mic.y), Pos2::new(mic.x + 4.0, mic.y)], Stroke::new(1.1, min_stroke));
 
-            // Minimize button
-            if min_resp.hovered() {
-                painter.rect_filled(min_rect, 0.0, Color32::from_white_alpha(20));
-            }
-            let min_stroke = if min_resp.hovered() { theme.text_active } else { theme.text_dim };
-            let mic = min_rect.center();
-            painter.line_segment([Pos2::new(mic.x - 4.0, mic.y), Pos2::new(mic.x + 4.0, mic.y)], Stroke::new(1.1, min_stroke));
-
-            if close_resp.clicked_by(egui::PointerButton::Primary) {
-                ctx.send_viewport_cmd(ViewportCommand::Close);
-            }
-            if min_resp.clicked_by(egui::PointerButton::Primary) {
-                ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
-            }
-            if max_resp.clicked_by(egui::PointerButton::Primary) {
-                ctx.send_viewport_cmd(ViewportCommand::Maximized(!is_max));
-            }
+                if close_resp.clicked_by(egui::PointerButton::Primary) {
+                    ctx.send_viewport_cmd(ViewportCommand::Close);
+                }
+                if min_resp.clicked_by(egui::PointerButton::Primary) {
+                    ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
+                }
+                if max_resp.clicked_by(egui::PointerButton::Primary) {
+                    ctx.send_viewport_cmd(ViewportCommand::Maximized(!is_max));
+                }
+            });
 
             // 4. ACTION CONTROLS & PROFILE DROPDOWN (placed left of window controls)
             let right_limit = bar_rect.max.x - win_ctrl_w * 3.0 - 8.0;
@@ -297,7 +309,7 @@ impl HeaderWidget {
                     let back_resp = ui.interact(back_rect, ui.id().with("hdr_back_to_typing"), egui::Sense::click());
                     draw_back_to_typing_btn(&ui.painter_at(back_rect), back_rect, back_resp.hovered(), theme);
                     if back_resp.clicked_by(egui::PointerButton::Primary) {
-                        *on_play_again = true;
+                        *on_close_settings = true;
                     }
                 }
                 HeaderScreen::Typing => {
@@ -353,12 +365,15 @@ impl HeaderWidget {
                         Color32::from_rgb(10, 14, 22),
                     );
 
-                    // User name
-                    let mut truncated_name = username_display.to_string();
-                    if truncated_name.len() > 8 {
-                        truncated_name.truncate(7);
-                        truncated_name.push('…');
-                    }
+                    // User name (safe UTF-8 char boundary truncation)
+                    let char_count = username_display.chars().count();
+                    let truncated_name = if char_count > 8 {
+                        let mut s: String = username_display.chars().take(7).collect();
+                        s.push('…');
+                        s
+                    } else {
+                        username_display.to_string()
+                    };
                     painter.text(
                         Pos2::new(chip_rect.min.x + 27.0, center_y),
                         egui::Align2::LEFT_CENTER,

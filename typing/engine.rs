@@ -390,6 +390,13 @@ impl GameEngine {
                     if word[ch_idx].status == CharStatus::Pending {
                         word[ch_idx].status = CharStatus::Incorrect;
                         self.stats.incorrect_keystrokes += 1;
+                        self.stats.keystroke_log.push(KeystrokeRecord {
+                            expected_char: word[ch_idx].expected,
+                            actual_char: ' ',
+                            is_correct: false,
+                            latency_ms,
+                            position: pos + (ch_idx - self.current_char),
+                        });
                     }
                 }
                 self.current_word += 1;
@@ -508,7 +515,7 @@ impl GameEngine {
     /// Internal error handler triggered whenever a typed character disagrees with expected text.
     fn on_mistake(&mut self, expected: char) {
         self.streak = 0;
-        self.has_error_shake = false;
+        self.has_error_shake = true;
         *self.stats.key_mistakes.entry(expected).or_insert(0) += 1;
     }
 

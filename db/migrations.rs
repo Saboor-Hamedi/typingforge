@@ -98,11 +98,12 @@ fn apply_migration_v1(conn: &mut Connection) -> Result<()> {
             "INSERT INTO texts (title, content, char_count, source, created_by, created_at) VALUES (?1, ?2, ?3, 'seed', NULL, ?4)",
             rusqlite::params![title, content, char_count, now],
         )?;
+        let text_id = tx.last_insert_rowid();
 
-        // Populate FTS5 table
+        // Populate FTS5 table with explicit correlated rowid
         tx.execute(
-            "INSERT INTO texts_fts (title, content) VALUES (?1, ?2)",
-            rusqlite::params![title, content],
+            "INSERT INTO texts_fts (rowid, title, content) VALUES (?1, ?2, ?3)",
+            rusqlite::params![text_id, title, content],
         )?;
     }
 
@@ -130,10 +131,11 @@ fn apply_migration_v2(conn: &mut Connection) -> Result<()> {
             "INSERT INTO passages (text_content, word_count, category, is_custom, created_at) VALUES (?1, ?2, ?3, 0, ?4)",
             rusqlite::params![content, word_count, category, now],
         )?;
+        let passage_id = tx.last_insert_rowid();
 
         tx.execute(
-            "INSERT INTO passages_fts (text_content, category) VALUES (?1, ?2)",
-            rusqlite::params![content, category],
+            "INSERT INTO passages_fts (rowid, text_content, category) VALUES (?1, ?2, ?3)",
+            rusqlite::params![passage_id, content, category],
         )?;
     }
 
@@ -157,14 +159,16 @@ fn apply_migration_v2(conn: &mut Connection) -> Result<()> {
     if let Ok(custom_items) = custom_check {
         for (content, created_at) in custom_items {
             let word_count = content.split_whitespace().count() as i64;
-            let _ = tx.execute(
+            if tx.execute(
                 "INSERT INTO passages (text_content, word_count, category, is_custom, created_at) VALUES (?1, ?2, 'custom', 1, ?3)",
                 rusqlite::params![content, word_count, created_at],
-            );
-            let _ = tx.execute(
-                "INSERT INTO passages_fts (text_content, category) VALUES (?1, 'custom')",
-                rusqlite::params![content],
-            );
+            ).is_ok() {
+                let pid = tx.last_insert_rowid();
+                let _ = tx.execute(
+                    "INSERT INTO passages_fts (rowid, text_content, category) VALUES (?1, ?2, 'custom')",
+                    rusqlite::params![pid, content],
+                );
+            }
         }
     }
 

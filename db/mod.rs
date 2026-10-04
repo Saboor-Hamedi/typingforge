@@ -5,5 +5,5 @@ pub mod queries;
 pub mod schema;
 
 pub use connection::DatabaseConnection;
-pub use models::{DbKeystrokeLog, DbPassage, DbSession, DbText, PersonalBest, User};
+pub use models::{DbKeystrokeLog, DbPassage, DbSession, DbText, PassageId, PersonalBest, User};
 pub use queries::DbQueries;

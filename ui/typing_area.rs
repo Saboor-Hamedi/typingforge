@@ -165,8 +165,11 @@ impl TypingAreaWidget {
                 font_id.clone()
             };
 
-            // Typo Visuals: No background highlight, no shake, no sound change. Just red text color + caret advance.
-            let display_text = ch.expected.to_string();
+            // Typo Visuals: Render the actual typed character if incorrect so the user sees what they typed
+            let display_text = match ch.status {
+                CharStatus::Incorrect => ch.typed.unwrap_or(ch.expected).to_string(),
+                _ => ch.expected.to_string(),
+            };
 
             painter.text(
                 draw_pos,

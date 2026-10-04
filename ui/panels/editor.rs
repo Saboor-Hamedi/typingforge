@@ -34,7 +34,7 @@ impl EditorPanel {
         ui: &mut egui::Ui,
         theme: &Theme,
         db: &DatabaseConnection,
-        user_id: Option<i64>,
+        _user_id: Option<i64>,
         on_apply: &mut Option<String>,
         on_close: &mut bool,
         dt: f32,
@@ -141,11 +141,16 @@ impl EditorPanel {
                         };
 
                         // Save to database passages library & FTS5 index
-                        let _ = DbQueries::insert_passage(db, &sanitized, title, true);
-                        let _ = DbQueries::insert_text(db, title, &sanitized, "user_edit", user_id);
-
-                        *on_apply = Some(sanitized);
-                        *on_close = true;
+                        match DbQueries::insert_passage(db, &sanitized, title, true) {
+                            Ok(_) => {
+                                *on_apply = Some(sanitized);
+                                *on_close = true;
+                            }
+                            Err(e) => {
+                                eprintln!("[Editor] Failed to save passage to database: {e}");
+                                self.status_message = Some((format!("DB Error: {e}"), 4.0));
+                            }
+                        }
                     }
                 }
 

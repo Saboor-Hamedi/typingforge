@@ -66,9 +66,9 @@ impl LiveMetrics {
 
     /// Throttled update called each frame: glides displayed metrics using EMA every 150ms
     pub fn update_frame(&mut self, elapsed_time: f32, dt: f32) {
-        // Continuous smooth interpolation towards smoothed target
+        // Continuous smooth interpolation towards smoothed target (framerate independent)
         let target = self.internal_net_wpm;
-        let blend = (self.ema_alpha * (dt / 0.016)).clamp(0.0, 1.0);
+        let blend = (1.0 - (1.0 - self.ema_alpha).powf((dt / 0.016).max(0.0))).clamp(0.0, 1.0);
         self.smoothed_wpm = self.smoothed_wpm + blend * (target - self.smoothed_wpm);
 
         // Throttle rendered display refresh to every 150ms

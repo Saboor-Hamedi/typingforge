@@ -21,9 +21,15 @@ fn main() -> eframe::Result<()> {
         let status = std::process::Command::new("cargo")
             .args(["run", "--bin", "publish"])
             .status();
-        if let Ok(st) = status {
-            if st.success() {
-                return Ok(());
+        match status {
+            Ok(st) if st.success() => return Ok(()),
+            Ok(st) => {
+                eprintln!("[Velotype] Publish failed with exit code: {:?}", st.code());
+                std::process::exit(st.code().unwrap_or(1));
+            }
+            Err(e) => {
+                eprintln!("[Velotype] Failed to run cargo publish: {e}");
+                std::process::exit(1);
             }
         }
     }

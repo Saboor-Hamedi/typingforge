@@ -4,6 +4,9 @@ version = "0.1.16"
 edition = "2021"
 authors = ["Saboor Hamedi <saboorhamedi49@gmail.com>"]
 description = "A kinetic, ultra-juicy desktop typing game with spring caret physics and real-time velocity graph"
+license = "MIT"
+repository = "https://github.com/Saboor-Hamedi/typingforge"
+homepage = "https://github.com/Saboor-Hamedi/typingforge"
 default-run = "forgetyping"
 
 [lib]

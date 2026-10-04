@@ -54,6 +54,29 @@ pub struct PersonalBest {
     pub achieved_at: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PassageId {
+    Passage(i64),
+    LegacyText(i64),
+}
+
+impl PassageId {
+    pub fn from_raw(raw: i64) -> Self {
+        if raw < 0 {
+            PassageId::LegacyText(-raw)
+        } else {
+            PassageId::Passage(raw)
+        }
+    }
+
+    pub fn to_raw(self) -> i64 {
+        match self {
+            PassageId::Passage(id) => id,
+            PassageId::LegacyText(id) => -id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DbPassage {
     pub id: i64,
@@ -62,4 +85,10 @@ pub struct DbPassage {
     pub category: String, // 'code', 'prose', 'quotes'
     pub is_custom: bool,
     pub created_at: i64,
+}
+
+impl DbPassage {
+    pub fn passage_id(&self) -> PassageId {
+        PassageId::from_raw(self.id)
+    }
 }

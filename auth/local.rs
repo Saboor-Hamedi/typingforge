@@ -38,8 +38,8 @@ impl LocalAuth {
         if trimmed_user.len() < 2 {
             return Err("Username must be at least 2 characters long".to_string());
         }
-        if password.len() < 3 {
-            return Err("Password must be at least 3 characters long".to_string());
+        if password.len() < 6 {
+            return Err("Password must be at least 6 characters long".to_string());
         }
 
         // Check if username is already taken (unique check)
@@ -48,8 +48,14 @@ impl LocalAuth {
         }
 
         let hash = Self::hash_password(password)?;
-        DbQueries::create_user(db, trimmed_user, &hash)
-            .map_err(|e| format!("Database error creating user: {e}"))
+        DbQueries::create_user(db, trimmed_user, &hash).map_err(|e| {
+            let err_str = e.to_string();
+            if err_str.contains("UNIQUE constraint failed") {
+                "Username is already taken. Please choose another username.".to_string()
+            } else {
+                format!("Database error creating user: {e}")
+            }
+        })
     }
 
     /// Authenticates a local user with their username and password.

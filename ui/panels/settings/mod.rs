@@ -175,7 +175,9 @@ impl SettingsPanel {
                                                 SettingsTab::Updates => {
                                                     UpdatesTab::show(ui, theme, &self.updater);
                                                 }
-                                                SettingsTab::Preview => unreachable!(),
+                                                SettingsTab::Preview => {
+                                                    SettingPreviewTab::show(ui, config, theme);
+                                                }
                                             }
                                             ui.add_space(24.0);
                                         },

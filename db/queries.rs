@@ -1,5 +1,5 @@
 use super::connection::DatabaseConnection;
-use super::models::{DbKeystrokeLog, DbPassage, DbSession, DbText, PersonalBest, User};
+use super::models::{DbKeystrokeLog, DbPassage, DbSession, DbText, PassageId, PersonalBest, User};
 use crate::utils::escape_fts5_query;
 use rusqlite::{params, OptionalExtension, Result};
 
@@ -186,6 +186,26 @@ impl DbQueries {
         })
     }
 
+    /// Returns aggregated statistics for a user: `(test_count, avg_wpm, max_wpm)` in a single query.
+    pub fn get_user_stats_summary(
+        db: &DatabaseConnection,
+        user_id: Option<i64>,
+    ) -> Result<(usize, f32, f32)> {
+        db.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT COUNT(*), COALESCE(AVG(wpm), 0.0), COALESCE(MAX(wpm), 0.0)
+                 FROM sessions WHERE user_id IS ?1",
+            )?;
+
+            stmt.query_row(params![user_id], |row| {
+                let count: i64 = row.get(0)?;
+                let avg_wpm: f64 = row.get(1)?;
+                let max_wpm: f64 = row.get(2)?;
+                Ok((count as usize, avg_wpm as f32, max_wpm as f32))
+            })
+        })
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Personal Bests Queries
     // ─────────────────────────────────────────────────────────────────────────
@@ -275,10 +295,10 @@ impl DbQueries {
 
             let text_id = tx.last_insert_rowid();
 
-            // Synchronize with FTS5 table
+            // Synchronize with FTS5 table with explicit correlated rowid
             tx.execute(
-                "INSERT INTO texts_fts (title, content) VALUES (?1, ?2)",
-                params![title, content],
+                "INSERT INTO texts_fts (rowid, title, content) VALUES (?1, ?2, ?3)",
+                params![text_id, title, content],
             )?;
 
             tx.commit()?;
@@ -290,16 +310,20 @@ impl DbQueries {
         db: &DatabaseConnection,
         search_query: &str,
     ) -> Result<Vec<DbText>> {
-        let escaped = escape_fts5_query(search_query);
-        if escaped.is_empty() {
+        let trimmed = search_query.trim();
+        if trimmed.is_empty() {
             return Self::get_recent_texts(db, 20);
+        }
+        let escaped = escape_fts5_query(trimmed);
+        if escaped.is_empty() {
+            return Ok(Vec::new());
         }
 
         db.with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT t.id, t.title, t.content, t.char_count, t.source, t.created_by, t.created_at
                  FROM texts t
-                 JOIN texts_fts f ON f.title = t.title AND f.content = t.content
+                 JOIN texts_fts f ON f.rowid = t.id
                  WHERE texts_fts MATCH ?1
                  ORDER BY rank LIMIT 20",
             )?;
@@ -409,10 +433,10 @@ impl DbQueries {
                 params![text_content, word_count, category, is_custom as i64, now],
             )?;
             let id = tx.last_insert_rowid();
-            let _ = tx.execute(
+            tx.execute(
                 "INSERT INTO passages_fts (rowid, text_content, category) VALUES (?1, ?2, ?3)",
                 params![id, text_content, category],
-            );
+            )?;
             tx.commit()?;
             Ok(DbPassage {
                 id,
@@ -692,7 +716,8 @@ impl DbQueries {
         }
 
         db.with_conn(|conn| {
-            let pattern = format!("%{}%", trimmed.to_lowercase());
+            let escaped_like = trimmed.to_lowercase().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            let pattern = format!("%{}%", escaped_like);
             let mut list = Vec::new();
             let mut seen_texts = std::collections::HashSet::new();
 
@@ -700,9 +725,9 @@ impl DbQueries {
             let mut stmt = conn.prepare(
                 "SELECT id, text_content, word_count, category, is_custom, created_at
                  FROM passages
-                 WHERE LOWER(category) LIKE ?1 OR LOWER(text_content) LIKE ?1
+                 WHERE LOWER(category) LIKE ?1 ESCAPE '\\' OR LOWER(text_content) LIKE ?1 ESCAPE '\\'
                  ORDER BY
-                    CASE WHEN LOWER(category) LIKE ?1 THEN 0 ELSE 1 END,
+                    CASE WHEN LOWER(category) LIKE ?1 ESCAPE '\\' THEN 0 ELSE 1 END,
                     is_custom DESC,
                     id DESC
                  LIMIT 50",
@@ -776,26 +801,28 @@ impl DbQueries {
         let word_count = text_content.split_whitespace().count() as i64;
         db.with_conn(|conn| {
             let tx = conn.transaction()?;
-            if passage_id > 0 {
-                tx.execute(
-                    "UPDATE passages SET text_content = ?1, word_count = ?2, category = ?3 WHERE id = ?4",
-                    params![text_content, word_count, category, passage_id],
-                )?;
-                let _ = tx.execute(
-                    "UPDATE passages_fts SET text_content = ?1, category = ?2 WHERE rowid = ?3",
-                    params![text_content, category, passage_id],
-                );
-            } else {
-                let text_id = -passage_id;
-                let char_count = text_content.chars().count() as i64;
-                tx.execute(
-                    "UPDATE texts SET title = ?1, content = ?2, char_count = ?3 WHERE id = ?4",
-                    params![category, text_content, char_count, text_id],
-                )?;
-                let _ = tx.execute(
-                    "UPDATE texts_fts SET title = ?1, content = ?2 WHERE rowid = ?3",
-                    params![category, text_content, text_id],
-                );
+            match PassageId::from_raw(passage_id) {
+                PassageId::Passage(pid) => {
+                    tx.execute(
+                        "UPDATE passages SET text_content = ?1, word_count = ?2, category = ?3 WHERE id = ?4",
+                        params![text_content, word_count, category, pid],
+                    )?;
+                    tx.execute(
+                        "UPDATE passages_fts SET text_content = ?1, category = ?2 WHERE rowid = ?3",
+                        params![text_content, category, pid],
+                    )?;
+                }
+                PassageId::LegacyText(tid) => {
+                    let char_count = text_content.chars().count() as i64;
+                    tx.execute(
+                        "UPDATE texts SET title = ?1, content = ?2, char_count = ?3 WHERE id = ?4",
+                        params![category, text_content, char_count, tid],
+                    )?;
+                    tx.execute(
+                        "UPDATE texts_fts SET title = ?1, content = ?2 WHERE rowid = ?3",
+                        params![category, text_content, tid],
+                    )?;
+                }
             }
             tx.commit()?;
             Ok(())
@@ -805,13 +832,15 @@ impl DbQueries {
     pub fn delete_passage(db: &DatabaseConnection, passage_id: i64) -> Result<()> {
         db.with_conn(|conn| {
             let tx = conn.transaction()?;
-            if passage_id > 0 {
-                let _ = tx.execute("DELETE FROM passages_fts WHERE rowid = ?1", params![passage_id]);
-                tx.execute("DELETE FROM passages WHERE id = ?1", params![passage_id])?;
-            } else {
-                let text_id = -passage_id;
-                let _ = tx.execute("DELETE FROM texts_fts WHERE rowid = ?1", params![text_id]);
-                tx.execute("DELETE FROM texts WHERE id = ?1", params![text_id])?;
+            match PassageId::from_raw(passage_id) {
+                PassageId::Passage(pid) => {
+                    tx.execute("DELETE FROM passages_fts WHERE rowid = ?1", params![pid])?;
+                    tx.execute("DELETE FROM passages WHERE id = ?1", params![pid])?;
+                }
+                PassageId::LegacyText(tid) => {
+                    tx.execute("DELETE FROM texts_fts WHERE rowid = ?1", params![tid])?;
+                    tx.execute("DELETE FROM texts WHERE id = ?1", params![tid])?;
+                }
             }
             tx.commit()?;
             Ok(())
@@ -843,9 +872,10 @@ impl DbQueries {
                     "INSERT INTO texts (title, content, char_count, source, created_by, created_at) VALUES (?1, ?2, ?3, 'seed', NULL, ?4)",
                     params![title, content, char_count, now],
                 )?;
+                let text_id = tx.last_insert_rowid();
                 tx.execute(
-                    "INSERT INTO texts_fts (title, content) VALUES (?1, ?2)",
-                    params![title, content],
+                    "INSERT INTO texts_fts (rowid, title, content) VALUES (?1, ?2, ?3)",
+                    params![text_id, title, content],
                 )?;
             }
 
@@ -856,9 +886,10 @@ impl DbQueries {
                     "INSERT INTO passages (text_content, word_count, category, is_custom, created_at) VALUES (?1, ?2, ?3, 0, ?4)",
                     params![content, word_count, category, now],
                 )?;
+                let passage_id = tx.last_insert_rowid();
                 tx.execute(
-                    "INSERT INTO passages_fts (text_content, category) VALUES (?1, ?2)",
-                    params![content, category],
+                    "INSERT INTO passages_fts (rowid, text_content, category) VALUES (?1, ?2, ?3)",
+                    params![passage_id, content, category],
                 )?;
             }
 

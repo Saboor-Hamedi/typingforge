@@ -45,7 +45,7 @@ impl DatabaseConnection {
     where
         F: FnOnce(&mut Connection) -> Result<R>,
     {
-        let mut guard = self.conn.lock().unwrap();
+        let mut guard = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         f(&mut guard)
     }
 }

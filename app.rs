@@ -149,23 +149,25 @@ impl VelotypeApp {
             let text = match self.engine.config.mode {
                 GameMode::Words => {
                     let target = self.engine.config.word_target as usize;
-                    DbQueries::get_random_passage_for_words(&self.db, target)
+                    let full_text = DbQueries::get_random_passage_for_words(&self.db, target)
                         .ok()
                         .flatten()
-                        .map(|p| p.text_content)
+                        .map(|p| p.text_content);
+                    full_text.map(|t| {
+                        let words: Vec<&str> = t.split_whitespace().collect();
+                        if words.len() > target {
+                            words[..target].join(" ")
+                        } else {
+                            t
+                        }
+                    })
                 }
                 GameMode::Timed => {
-                    let target = self.engine.config.timed_duration as usize;
-                    DbQueries::get_random_passage_for_words(&self.db, target)
+                    // In timed mode, use a full literature passage so words do not exhaust early
+                    DbQueries::get_random_passage(&self.db, None)
                         .ok()
                         .flatten()
                         .map(|p| p.text_content)
-                        .or_else(|| {
-                            DbQueries::get_random_passage(&self.db, None)
-                                .ok()
-                                .flatten()
-                                .map(|p| p.text_content)
-                        })
                 }
             };
             (text, false)
@@ -196,18 +198,18 @@ impl VelotypeApp {
         let consistency = self.engine.stats.consistency as f64;
         let now = chrono::Utc::now().timestamp();
 
-        // 1. Personal Best tiebreakers: WPM -> accuracy -> consistency (Part 7)
+        // 1. Personal Best tiebreakers: WPM -> accuracy -> consistency
         let prev_pb = DbQueries::get_personal_best(&self.db, user_id, &mode_str, duration_val).ok().flatten();
 
         let is_new_pb = match &prev_pb {
-            None => net_wpm > 5.0,
+            None => net_wpm > 0.0,
             Some(pb) => {
-                if net_wpm > pb.wpm + 0.05 {
+                if net_wpm > pb.wpm + 0.001 {
                     true
-                } else if (net_wpm - pb.wpm).abs() <= 0.05 {
-                    if accuracy > pb.accuracy + 0.05 {
+                } else if (net_wpm - pb.wpm).abs() <= 0.001 {
+                    if accuracy > pb.accuracy + 0.001 {
                         true
-                    } else if (accuracy - pb.accuracy).abs() <= 0.05 {
+                    } else if (accuracy - pb.accuracy).abs() <= 0.001 {
                         consistency > pb.consistency
                     } else {
                         false
@@ -291,8 +293,11 @@ impl VelotypeApp {
             return;
         }
 
-        // When Fuzzy Palette is active, suspend typing input to prevent leaking keystrokes
+        // When Fuzzy Palette is active, allow Esc to close it or suspend typing input
         if self.fuzzy_palette.is_open {
+            if ctx.input(|i| i.key_pressed(Key::Escape)) {
+                self.fuzzy_palette.is_open = false;
+            }
             return;
         }
 
@@ -333,13 +338,15 @@ impl VelotypeApp {
         }
 
         if esc_pressed {
-            if self.current_screen == AppScreen::Settings || self.current_screen == AppScreen::Editor {
+            if self.is_profile_dropdown_open {
+                self.is_profile_dropdown_open = false;
+            } else if self.current_screen == AppScreen::Settings || self.current_screen == AppScreen::Editor {
                 ConfigLoader::save(&self.config);
                 self.current_screen = AppScreen::Typing;
             } else if self.current_screen == AppScreen::Results {
                 self.restart_game();
-            } else {
-                self.current_screen = AppScreen::Settings;
+            } else if self.current_screen == AppScreen::Typing {
+                self.restart_game();
             }
             return;
         }
@@ -367,14 +374,21 @@ impl VelotypeApp {
                                 continue;
                             }
                             let is_correct = self.engine.handle_char(c);
-                            self.audio.play_click();
                             self.caret.is_typing = true;
-                            if is_correct && self.config.particles_enabled {
-                                self.particles.emit(
-                                    self.caret.current_pos,
-                                    Color32::from_rgb(56, 189, 248),
-                                    5,
-                                );
+                            if is_correct {
+                                self.audio.play_click();
+                                if self.config.particles_enabled {
+                                    self.particles.emit(
+                                        self.caret.current_pos,
+                                        Color32::from_rgb(56, 189, 248),
+                                        5,
+                                    );
+                                }
+                            } else {
+                                if self.config.screen_shake_enabled {
+                                    self.shake.trigger();
+                                }
+                                self.audio.play_error();
                             }
                         }
                     }
@@ -485,6 +499,7 @@ impl eframe::App for VelotypeApp {
                 let border_thick = 8.0_f32;
                 let corner_size = 18.0_f32;
                 if let Some(pos) = ctx.pointer_latest_pos() {
+                    let on_window_controls = pos.x >= win_rect.max.x - 120.0 && pos.y <= win_rect.min.y + 38.0;
                     let on_left = pos.x >= win_rect.min.x && pos.x <= win_rect.min.x + border_thick;
                     let on_right = pos.x <= win_rect.max.x && pos.x >= win_rect.max.x - border_thick;
                     let on_top = pos.y >= win_rect.min.y && pos.y <= win_rect.min.y + border_thick;
@@ -495,7 +510,9 @@ impl eframe::App for VelotypeApp {
                     let in_corner_bl = pos.x <= win_rect.min.x + corner_size && pos.y >= win_rect.max.y - corner_size;
                     let in_corner_br = pos.x >= win_rect.max.x - corner_size && pos.y >= win_rect.max.y - corner_size;
 
-                    let resize_action = if in_corner_br || (on_right && on_bottom) {
+                    let resize_action = if on_window_controls {
+                        None
+                    } else if in_corner_br || (on_right && on_bottom) {
                         Some((egui::ResizeDirection::SouthEast, egui::CursorIcon::ResizeSouthEast))
                     } else if in_corner_bl || (on_left && on_bottom) {
                         Some((egui::ResizeDirection::SouthWest, egui::CursorIcon::ResizeSouthWest))
@@ -720,14 +737,14 @@ impl eframe::App for VelotypeApp {
                     // Left status telemetry
                     let left_text = match self.current_screen {
                         AppScreen::Typing => format!(
-                            "net: {} wpm  ·  acc: {}  ·  streak: {}  ·  audio: {}",
+                            "Net Speed: {} WPM  ·  Accuracy: {}  ·  Streak: {}  ·  Audio: {}",
                             self.engine.live_metrics.format_wpm(),
                             self.engine.live_metrics.format_accuracy(),
                             self.engine.streak,
                             self.config.sound_preset.display_name()
                         ),
                         AppScreen::Results => format!(
-                            "net: {:.0} wpm  ·  acc: {:.1}%  ·  raw: {:.0} wpm  ·  streak: {}  ·  time: {:.1}s",
+                            "Net: {:.0} WPM  ·  Accuracy: {:.1}%  ·  Raw: {:.0} WPM  ·  Streak: {}  ·  Time: {:.1}s",
                             self.engine.stats.net_wpm,
                             self.engine.stats.accuracy,
                             self.engine.stats.raw_wpm,
@@ -750,8 +767,8 @@ impl eframe::App for VelotypeApp {
                     let right_text = match self.current_screen {
                         AppScreen::Settings => format!("theme: {}  ·  esc return", theme.name),
                         AppScreen::Editor => "esc return  ·  enter apply".to_string(),
-                        AppScreen::Results => format!("theme: {}  ·  tab+enter play again", theme.name),
-                        AppScreen::Typing => format!("theme: {}  ·  ctrl+p palette  ·  tab restart", theme.name),
+                        AppScreen::Results => format!("theme: {}  ·  tab / enter restart", theme.name),
+                        AppScreen::Typing => format!("theme: {}  ·  ctrl+p palette  ·  ctrl+, settings  ·  tab / esc restart", theme.name),
                     };
 
                     fp.text(
@@ -796,7 +813,17 @@ impl eframe::App for VelotypeApp {
             }
         }
 
-        ctx.request_repaint();
+        let needs_continuous_repaint = self.engine.state == GameState::Running
+            || self.shake.timer > 0.0
+            || (self.caret.current_pos - self.caret.target_pos).length_sq() > 0.05
+            || self.pb_banner_timer > 0.0
+            || self.settings_panel.custom_texts_state.is_generating.load(std::sync::atomic::Ordering::Relaxed);
+
+        if needs_continuous_repaint {
+            ctx.request_repaint();
+        } else if self.current_screen == AppScreen::Typing {
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
+        }
     }
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {

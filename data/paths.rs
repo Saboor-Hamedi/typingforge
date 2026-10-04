@@ -9,11 +9,16 @@ pub fn app_data_dir() -> PathBuf {
     } else if let Some(proj) = directories::ProjectDirs::from("", "", "typingforge") {
         proj.data_dir().to_path_buf()
     } else {
-        PathBuf::from("typingforge_data")
+        std::env::temp_dir().join("typingforge")
     };
 
     if !dir.exists() {
-        let _ = std::fs::create_dir_all(&dir);
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            eprintln!("[Paths] Failed to create {}: {}. Falling back to temp directory.", dir.display(), e);
+            let temp = std::env::temp_dir().join("typingforge");
+            let _ = std::fs::create_dir_all(&temp);
+            return temp;
+        }
     }
 
     dir

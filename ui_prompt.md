@@ -1,11 +1,295 @@
-cargo run
-   Compiling forgetyping v0.1.13 (B:\rust\velotype-desktop-rust\src)
-error: linking with `x86_64-w64-mingw32-gcc` failed: exit code: 1
-  |
-  = note: "x86_64-w64-mingw32-gcc" "-fno-use-linker-plugin" "-Wl,--dynamicbase" "-Wl,--disable-auto-image-base" "-m64" "-Wl,--high-entropy-va" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib\\rsbegin.o" "C:\\Users\\Saboor\\AppData\\Local\\Temp\\rustcUNQGPt\\symbols.o" "<32 object files omitted>" "-Wl,-Bstatic" "B:\\rust\\velotype-desktop-rust\\src\\target\\debug\\deps/{libforgetyping-8f05cbc5c0960485,librfd-8ac33a2326312d1f,libwindows_sys-0ae6f39b15bdcb92,libserde_json-298a57d80941a3a9,libmemchr-a52d4a45d64f512f,libitoa-554b5606484cf71d,libzmij-305f8dae2f0e8efe,libchrono-af23fec0c5ccb159,librand-b6692220985e8e91,librand_chacha-a720eefda042977d,libppv_lite86-57ed8013b53d0e10,librusqlite-32c34c915fbc2c9e,libfallible_streaming_iterator-bc4ac6925a6d6a72,libfallible_iterator-1823e34369ba7e60,libhashlink-df4cd44188b25a6d,libhashbrown-ab9477f08070d047,liblibsqlite3_sys-13bc7ebf7fc6c521,libdirectories-67672c14afc57887,libdirs_sys-cd0f59e08332f706,libwindows_sys-1d03261ec155c5bb,libwindows_targets-4065b17c8355dcae,liboption_ext-a59c1979fbc79e59,libargon2-17c5a294ceff73c1,libcpufeatures-49ff192da2edefd1,libblake2-9a75a06c6ba331b3,libdigest-b7bae7b1a38fad79,libblock_buffer-ab6ff6092f7f6633,libcrypto_common-d7e70558fc2becd5,libgeneric_array-37d99914d5562858,libtypenum-a9199a16c749a06c,libpassword_hash-240d6a5f655bc341,libsubtle-8b9157b42c3916f1,libbase64ct-63a3a31265852045,librand_core-a92d3b31923a657f,libgetrandom-b1a995139474b18e,librodio-544f272d73d3dc45,libthiserror-184796646578f6e6,libhound-b39744c0fbc11644,libcpal-dc0843b6b1227fbf,libdasp_sample-7ec0ff02fdd4e05c,libwindows-e9aefe9c30207734,libwindows_core-3ea89a1fcea17051,libwindows_result-6c986b8194db2eb7,libeframe-da914500e3940960,libglutin_winit-41e4326d7a0cfad0,libhome-afbaf9b1c81a6ed5,libwindows_sys-a2770910fb858799,libimage-9f0f2402a6447454,libbyteorder_lite-0d7505d36da65259,libmoxcms-29db1a5d5de2dcca,libpxfm-b52ed9b88e902a83,libpng-5a30e68d0a8042ce,libflate2-64389680d83a49fc,libminiz_oxide-e02fdced18ac5669,libfdeflate-72925c3bd533c268,libsimd_adler32-f996cc0cdaaec636,libcrc32fast-9b94a352938f430e,libnum_traits-b7c98814b084d758,libglutin-7b9e4fde6ec1e558,libglutin_wgl_sys-46eeaccc0c3e741f,liblibloading-16cbc0a3c1dc3f3c,libglutin_egl_sys-4cdf38b30e9c7d85,libegui_winit-c9a872b104852ac1,libwebbrowser-49fdda0286f71c81,liburl-0a4bc1f648d4aa6e,libidna-2050f4a282c12549,libidna_adapter-9fa5c76b5ea3b87d,libicu_properties-978b1467cddc963b,libicu_properties_data-2210c2f46801e993,libicu_normalizer-a676401a196c7ff0,libicu_normalizer_data-0da1b347a0420278,libicu_collections-c6b7de564ffa6d8f,libutf8_iter-563025440ffdbb17,libpotential_utf-48ce6bbe0d7b46f6,libicu_provider-2c61108a7a01581a,libicu_locale_core-c0c116ce68bc341e,libtinystr-f794e8ae36d7f3e8,liblitemap-f1b7a8b1f1aae31b,libwriteable-59bcb8fbdbad5615,libzerovec-c4ecd00f7c174a5e,libzerotrie-359297b83ef7bf92,libyoke-debddcaaa58a66c8,libstable_deref_trait-6ffb1a32f088fc4a,libzerofrom-6209c9137fa42f51,libform_urlencoded-8666d1a330d2b3f4,libpercent_encoding-89918e787e18db74,libarboard-335d7244b0c29946,libclipboard_win-8f8c913ee34950e5,liberror_code-196f355a3c1147ef,libwindows_sys-d3c0bbd22777ca2e,libwindows_targets-dddf21e4c460ae93,libwinapi-1ee414d377c088eb,libweb_time-2becfb6747bd050f,libwinit-5b4d4f218280bb94,libunicode_segmentation-28f68def300465e9,libtracing-a1b69d3aa53ccfec,libpin_project_lite-a9b866d16d9d7adb,libtracing_core-5bf2e44eb7f5fb92,libwindows_sys-8949624b82afc5ed,libwindows_targets-2c4f8d429b40887c,libsmol_str-0d58b003c0aa45e2,libcursor_icon-7efb992d44144fb5,libdpi-44f82deaf2fac5d9,libstatic_assertions-adf6536e9128d136,libraw_window_handle-5518f707a52f17d7,libegui_glow-3d00386a5126949d,libmemoffset-fa2d954841f6c4fb,libglow-fa70dd0074b5155b,libegui-c852f576491425f3,libron-a9439096c9ddc2a7,libbitflags-5e977698af963a52,libbase64-074d64a37d577c2b,libepaint-392b78cfc8ed300e,libnohash_hasher-c6c62a8b3ee368bb,liblog-d0f59cdb6afbd337,libahash-9e8dac2904466141,libonce_cell-f8dd2c34f38e90c1,libzerocopy-d0c1fa74ead8b247,libepaint_default_fonts-b06c2e592c56c050,libab_glyph-d590442a92051a99,libowned_ttf_parser-86587bfdfd570141,libttf_parser-e0fc27ad4a9c169f,libab_glyph_rasterizer-1a67c5d022b95bac,libparking_lot-702c96678438007b,libparking_lot_core-b05e2d4465fe0148,libwindows_link-baf5e3a7d9ff48b2,libcfg_if-c4da4ac151e8d4c8,libsmallvec-fd9412ca73079853,liblock_api-03f4248b80a6a59f,libscopeguard-03f8ba002f3190ef,libecolor-16501f84511bcfb5,libemath-559187df41b397d0,libbytemuck-dc9849f264707564,libserde-3bce08e6bddc4cbc,libserde_core-099ec6a5bb5a341c}.rlib" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libcfg_if-*,libwindows_targets-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-lwindows.0.52.0" "-lwindows.0.48.5" "-lbcrypt" "-ladvapi32" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lwindows.0.52.0" "-lopengl32" "-lshlwapi" "-lkernel32" "-luser32" "-lshell32" "-lgdi32" "-ladvapi32" "-lwindows.0.53.0" "-lwinapi_gdi32" "-lwinapi_kernel32" "-lwinapi_msimg32" "-lwinapi_opengl32" "-lwinapi_user32" "-lwinapi_winspool" "-lwindows.0.52.0" "-lkernel32" "-lkernel32" "-lkernel32" "-lntdll" "-luserenv" "-lws2_32" "-ldbghelp" "-lgcc_eh" "-l:libpthread.a" "-lmsvcrt" "-lmingwex" "-lmingw32" "-lgcc" "-lmsvcrt" "-lmingwex" "-luser32" "-lkernel32" "-Wl,--nxcompat" "-L" "B:\\rust\\velotype-desktop-rust\\src\\target\\debug\\build\\libsqlite3-sys-637d9383ec351c97\\out" "-L" "C:\\Users\\Saboor\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_gnu-0.48.5\\lib" "-L" "C:\\Users\\Saboor\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_gnu-0.53.1\\lib" "-L" "C:\\Users\\Saboor\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_gnu-0.52.6\\lib" "-L" "C:\\Users\\Saboor\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\winapi-x86_64-pc-windows-gnu-0.4.0\\lib" "-o" "B:\\rust\\velotype-desktop-rust\\src\\target\\debug\\deps\\forgetyping-bda63451b37c4de8.exe" "-Wl,--subsystem,windows" "-Wl,--gc-sections" "-no-pie" "-nodefaultlibs" "<sysroot>\\lib\\rustlib\\x86_64-pc-windows-gnu\\lib\\rsend.o"
-  = note: some arguments are omitted. use `--verbose` to show all linker arguments
-  = note: C:/ProgramData/mingw64/mingw64/bin/../lib/gcc/x86_64-w64-mingw32/15.2.0/../../../../x86_64-w64-mingw32/bin/ld.exe: final link failed: No space left on device␍
-          collect2.exe: error: ld returned 1 exit status
+# Suggestions — TypingForge ("Velotype") Code Review
 
+Deep audit of `A:\rust\typingforge\src`. Items are grouped by category,
+each with file:line references. Severity: 🔴 critical, 🟠 important, 🟡 minor.
 
-error: could not compile `forgetyping` (bin "forgetyping") due to 1 previous error
+---
+
+## 1. Correctness Bugs
+
+1. 🔴 **FTS5 rowids never correlated with base tables** — `db/migrations.rs:103-106,134-137,164-167`, `db/queries.rs:279-282,846-849,859-862`.
+   `INSERT INTO texts_fts (title, content)` / `INSERT INTO passages_fts (...)` omit `rowid`,
+   so FTS rowids auto-assign and drift out of sync with `texts.id`/`passages.id` after any
+   delete. But `delete_user` (`db/queries.rs:91`), `delete_passage` (`db/queries.rs:809,813`),
+   `update_passage` (`db/queries.rs:785,795`), and `truncate_database` delete/update by rowid.
+   Result: wrong FTS rows deleted/updated, stale index entries, ghost search hits.
+   `insert_passage` (`db/queries.rs:412-415`) *does* set `rowid` — inconsistent with `insert_text`.
+   Fix: always insert FTS rowid explicitly and mirror base rowid on update/delete, or use
+   external-content FTS5 tables with triggers.
+
+2. 🔴 **`search_texts` joins FTS to base rows on title+content instead of rowid** —
+   `db/queries.rs:299-305`. Duplicate titles/contents collapse results, miss rows, pair a
+   match with the wrong document, and `ORDER BY rank` references the wrong table → arbitrary
+   ranking. Fix: `JOIN texts t ON t.id = f.rowid`.
+
+3. 🔴 **Error shake flag inverted/dead** — `typing/engine.rs:422-426`: `on_mistake` sets
+   `self.has_error_shake = false;` (never `true`). Velocity-graph error ticks
+   (`typing/engine.rs:240`) and ScreenShake-on-error never fire. Also `shake.trigger()` is
+   never called anywhere and `play_error()` (`audio.rs:164`) is never called — dead features.
+
+4. 🟠 **"Back to Typing" on Results restarts the game** — `ui/header.rs:297-301`: the back
+   button sets `*on_play_again = true;`. Both buttons reload a fresh passage; the label lies.
+
+5. 🟠 **Skipped chars on Space press aren't logged as keystrokes** — `typing/engine.rs:302-322`:
+   unfinished chars are marked `Incorrect` and counted in `incorrect_keystrokes`, but no
+   `KeystrokeRecord` is pushed, so persisted keystroke logs undercount errors vs. stats.
+
+6. 🟠 **Typing a typo stores `typed` but never renders it** — `ui/typing_area.rs:169` renders
+   `ch.expected` always; `DisplayChar.typed` is dead. Typos show expected char in red, so the
+   user never sees what they actually typed. Combined with caret advancing on error, feedback
+   is confusing.
+
+7. 🟠 **Editor "Apply" double-inserts into `passages` AND `texts`** —
+   `ui/panels/editor.rs:143-148`: every apply writes duplicate rows to both tables (and both
+   FTS indexes). Palette dedupe by text hides this (`db/queries.rs:643`) but tables grow.
+
+8. 🟠 **Timed mode uses `word_target` (25/40 *seconds*) to pick a passage with 25/40 *words*** —
+   `app.rs:120-125`. Fragile coupling; a 40s passage is treated as 40 words.
+
+9. 🟠 **`is_new_pb` tie logic isn't a total order** — `app.rs:165-182`: in the accuracy-epsilon
+   band it requires strictly greater consistency; equal-consistency near-ties flip-flop on the
+   `+0.05` epsilon. Also `net_wpm > 5.0` means a slow first run is never a PB.
+
+10. 🟡 **Timed-mode first keystroke always gets latency from t=0** — `typing/engine.rs:291-295`:
+    `last_keystroke_time` is updated before computing `latency_ms` from its stale value.
+
+11. 🟡 **`LiveMetrics::update_frame` EMA is frame-rate dependent** — `typing/metrics.rs:71`:
+    `ema_alpha * (dt/0.016)` clamps to 1.0 above 62.5 ms frames; not dt-corrected
+    (`1 - exp(-dt/tau)`), so WPM smoothing differs at 60 vs 144 Hz.
+
+12. 🟡 **`is_version_newer` not semver-robust** — `ui/updater.rs:513-533`: prerelease tags
+    (`v1.2.0-rc1`) fail to parse and compare as "not newer".
+
+13. 🟡 **`search_passages` LIKE wildcards not escaped** — `db/queries.rs:695`: `%`/`_` in user
+    input act as wildcards ("100%" matches everything containing "100"). Parameterized so no
+    injection, but wrong match semantics.
+
+14. 🟡 **`escape_fts5_query` strips punctuation; empty result silently returns recent texts** —
+    `utils/text.rs:66-80`: searching "C++" or "!!!" yields `don*`-style tokens or the recent-
+    list fallback — surprising.
+
+15. 🟡 **In `Words` mode the passage may not match `word_target`** — `db/queries.rs:458-475`
+    falls back to *any* closest word_count, so a 25-word target can return a 200-word passage
+    and the HUD/target diverge.
+
+16. 🟡 **Backspace never restores streak state and Ctrl+Backspace re-counts stats** —
+    `typing/engine.rs:387-419`: backspaced typos keep their incorrect counts (by design for
+    accuracy) but retyped chars overwrite statuses, so both attempts count; inconsistent.
+
+17. 🟡 **`elapsed_time`/`window_duration` edge** — `typing/engine.rs:206`: instant WPM uses the
+    window's oldest keystroke; two keys 1.15 s apart still yield a nonzero burst reading.
+
+---
+
+## 2. Race Conditions / Threading
+
+18. 🔴 **Updater spawns a download thread every frame while in `UpdateAvailable`** —
+    `ui/updater.rs:429-444`: `render_button`'s `UpdateAvailable` arm calls
+    `self.start_download()` each frame. Status only flips to `Downloading` once the spawned
+    thread runs, so egui (>60 fps, and it calls `request_repaint()`) can spawn tens of curl
+    processes racing on the same temp file. Fix: set status to `Downloading` synchronously in
+    `start_download`, and never mutate/spawn from the render path.
+
+19. 🟠 **Silent auto-download of updates on startup** — `ui/panels/settings/mod.rs:50-53`:
+    `SettingsPanel::new()` calls `check_for_updates(true)` → downloads and stages an installer
+    without consent, then `apply_and_restart` can `process::exit(0)`. Fix: check silently,
+    prompt before download.
+
+20. 🟠 **Mutex poisoning cascades across the app** — `db/connection.rs:48` and many
+    `lock().unwrap()` in `ui/updater.rs`, `profile.rs:462,585,614`. One panic in a download/
+    import thread while holding the lock kills every later UI frame. Fix: handle `PoisonError`
+    or use `parking_lot::Mutex`.
+
+21. 🟠 **Import/export holds the single `Arc<Mutex<Connection>>` while the UI also needs it** —
+    `profile.rs:587-596,616-625`. Long JSON streaming blocks all UI-side DB work (fuzzy
+    palette search, passage loading). Fix: use a separate read connection or run entirely off
+    the shared writer.
+
+22. 🟡 **No Cancel button actually cancels** — `profile.rs:44,61,582,584,611,613`:
+    `sync_cancel` is declared, reset to false, and passed to export/import (which do check it,
+    `typing_backup.rs:52,103`, `typing_import.rs:175`), but nothing in the UI ever stores
+    `true`. The advertised cancel path is dead.
+
+23. 🟡 **`restart_game` / DB open errors swallowed with only `eprintln!`** — silent in-memory
+    DB fallback (`app.rs:43-46`) means all results vanish on exit with no UI notice.
+
+---
+
+## 3. Performance
+
+24. 🟠 **Typing view re-wraps and re-measures every character every frame** —
+    `ui/typing_area.rs:23-26,36-138,141-178`: lays out every char individually, builds the full
+    paint list each frame, calls `ui.fonts(layout_no_wrap("M"))` per frame. O(chars) forever.
+
+25. 🟠 **Continuous `request_repaint()` even when idle** — `app.rs:754` (+ updater's
+    `request_repaint()`): 60+ fps repaint burns CPU/battery; no idle sleep.
+
+26. 🟠 **Velocity history is unbounded; graph resampled every frame** — `typing/engine.rs:234-243`
+    pushes ~6.7 pts/s for the whole session; `ui/velocity_graph.rs` resamples Catmull-Rom each
+    frame with no cap.
+
+27. 🟡 **`words` iterated 4× per frame in engine update** — `typing/engine.rs:179-185`: decays
+    `pop_anim` for every char every frame even when nothing animates.
+
+28. 🟡 **`get_random_passage_for_words`/`get_random_custom_passage` in `reset()` waste work** —
+    `typing/engine.rs:103-138` generates 120 random words, then `load_passage_text` overwrites
+    them for every custom passage load.
+
+29. 🟡 **Profile tab fetches 100 session rows every frame** — `profile.rs:145-158`: should be
+    a SQL aggregate (`COUNT`, `AVG`, `MAX`).
+
+30. 🟡 **No voice limiting on click audio** — `audio.rs:104-161`: each keystroke spawns a new
+    `FnSource`; fast typing queues dozens of overlapping 30-60 ms sources.
+
+31. 🟡 **`main.rs` publish subcommand falls through to launching the UI on failure** —
+    `main.rs:8-22`: a desktop app shelling out to `cargo` from PATH; on failure the app
+    *still launches*. Pick one behavior.
+
+---
+
+## 4. UI/UX
+
+32. 🔴 **Username truncated by byte index can panic (release `panic="abort"` → crash)** —
+    `ui/header.rs:357-361`. `LocalAuth::register` accepts any non-empty username
+    (`auth/local.rs:56`), so `Saboor🚀` crashes the header chip. Fix: `chars().take(n)`.
+
+33. 🟠 **Resize hit-zones overlap header buttons** — `app.rs:439-480`: the 8 px top border
+    overlaps the header's top 8 px; hovering the top edge of close/min/max sets `ResizeNorth`
+    and a press starts a resize instead of the click.
+
+34. 🟠 **Esc is overloaded with three meanings** — `app.rs:297-306`: Esc on Typing→Settings,
+    Settings→Typing, Results→restart. Users expect Esc to close the palette/menu. Footer hints
+    contradict actual behavior (`ui/panels/*` footers, Results footer "tab+enter play again"
+    while plain Enter/Space also restart, `app.rs:288`).
+
+35. 🟠 **Window buttons fade to 0.28 alpha while typing** — `app.rs:429-431`: close/min/max
+    become hard to see exactly in flow state.
+
+36. 🟠 **Header drag region covers mode tabs/buttons** — `ui/header.rs:43-49`: `click_and_drag`
+    over the whole bar; drags starting on a tab issue `ViewportCommand::StartDrag`.
+
+37. 🟡 **Custom Texts tab says "strict 25/40 word limits" but defaults to 20** —
+    `custom_texts.rs:99` vs `custom_texts.rs:66-67`.
+
+38. 🟡 **`unreachable!()` panic path in settings match** — `settings/mod.rs:178`: with
+    `panic="abort"` this is a hard crash if ever reached.
+
+39. 🟡 **Truncated-by-byte FTS search and raw LIKE on title+content** — searching is
+    case-folded via `LOWER()` but not trimmed/normalized consistently across tables.
+
+40. 🟡 **Modal fuzzy palette isn't modal** — it opens over Results/Settings; selecting a
+    passage silently switches to Typing (`app.rs:258-260`).
+
+41. 🟡 **Footer abbreviations "net:", "acc:" with no tooltips** — `app.rs:676-718`.
+
+42. 🟡 **"high scores" wording stale; table is `personal_bests`** — `profile.rs:646`.
+
+43. 🟡 **Weak password policy** — `auth/local.rs:56-64`: min length 3, no strength rules;
+    username uniqueness TOCTOU mapped to a generic DB error (`auth/local.rs`).
+
+44. 🟡 **Minimum window 860×600 with fixed sidebars** — settings content clamps to
+    `max(360.0)` (`settings/mod.rs:104-108`) → overlap/clipping at small sizes.
+
+45. 🟡 **No accessibility**: icon-only buttons have no screen-reader names, no reduced-motion
+    setting despite heavy animation.
+
+46. 🟡 **"Velotype"/"Tylotype" title vs `forgetyping` crate name** — `Cargo.toml`,
+    `app.rs` window title, `ui/header.rs`. Pick one.
+
+---
+
+## 5. Dead Code / Duplication / Naming
+
+47. 🔴 **Duplicate `AppConfig`/`StorageManager` module** — `storage.rs:1-97` vs
+    `data/loader.rs:9-79`: two different config structs, two dirs (`com/Velotype/velotype` vs
+    `com/velotype/velotype`, `data/paths.rs:4-6`), one writing `settings.json` the other
+    `config.json`. `ui/settings.rs` (324 lines, `SettingsScreen`) is re-exported
+    (`ui/mod.rs:19`) but never used. Delete both or wire one in.
+
+48. 🟠 **Dead modules**: `ui/results.rs` (`ResultsScreen` never constructed; live one is
+    `ui/panels/results_view.rs`), `game/engine.rs:1` 1-line re-export shim,
+    `TextGenerator::random_quote()` unused, `play_error()` unused (see #3),
+    `TypingAreaWidget::draw`'s `_is_cur_word`/`scroll_y` hardcoded 0 (`ui/typing_area.rs:131,141`).
+
+49. 🟠 **Negative-id sentinel overloads `DbPassage.id`** — `db/queries.rs:631-638,747-754,789,812`:
+    texts are smuggled in as passages with `id = -id`. Fragile; any consumer treating
+    `passage.id` as a PK misbehaves. Replace with an enum or union type.
+
+50. 🟡 **Dead fields**: `VelocityPoint.is_error` (always false, #3),
+    `DisplayChar.shake_anim` (`game/text.rs:17`), `KeystrokeRecord.latency_ms` unused in
+    analytics, `AppConfig.high_scores` HashMap never read, `include_punctuation`/
+    `include_numbers` never set by UI, `InternalMetrics.internal_raw_wpm` partially used.
+
+51. 🟡 **Stringly-typed columns**: `DbText.source` ("seed"|"user_paste"|"user_edit") and
+    `DbPassage.category` should be enums.
+
+52. 🟡 **Hardcoded modes 25/40 only** — no 60 s/120-word options (`typing/engine.rs:12-22`).
+
+53. 🟡 **`SEED_PASSAGES` vs `CURATED_SEED_PASSAGES` inconsistency** — `data/loader.rs:82-106`
+    vs `db/migrations.rs:5-58`; one seeds texts, the other passages.
+
+54. 🟡 **No crate docs, all modules `pub`** — `lib.rs`: internal APIs exposed publicly.
+
+55. 🟡 **`Cargo.toml` missing metadata** — no `license`, `repository`, `homepage`; `LICENSE`
+    exists at `src/LICENSE`. `panic="abort"` in release + the hazards above → audit or unwind.
+
+56. 🟡 **`src/target` build artifacts inside the second repo** — outer repo root is
+    `typingforge/` but the crate (and its own `.git`) lives in `typingforge/src/`; verify
+    `.gitignore` covers `target/`.
+
+---
+
+## 6. Missing Error Handling
+
+57. 🟠 **`ConfigLoader::save` ignores write errors** — `data/loader.rs:73-78`: settings
+    silently don't persist on read-only dirs.
+
+58. 🟠 **`app_data_dir()` panics if OS dirs unavailable** — `data/paths.rs:10-12`:
+    sandboxed/locked-down users crash at startup instead of a temp fallback.
+
+59. 🟠 **All DB query errors swallowed** — `app.rs:107,115-131`, `editor.rs:144-145`,
+    `profile.rs`: passage-load failure silently falls back to random words; editor
+    `insert_*` errors invisible (user thinks it saved); PB-save failure swallowed
+    (`app.rs:238`); FTS insert/update failures (`let _ = tx.execute(...)`,
+    `db/queries.rs:412-415,784-799`) cause silent index drift.
+
+60. 🟡 **Guest PB sentinel `user_id = 0` while sessions store `NULL`** — `app.rs:156`,
+    `db/models.rs:50`: inconsistent user identification between tables.
+
+61. 🟡 **`DbQueries::delete_user` FTS delete correlated to `texts.id` via rowid bug (#1)** —
+    deleting a user leaves their texts orphaned in FTS, leaking deleted content into ranking.
+
+62. 🟡 **Import has no size guard** — importing a huge JSON can OOM/throw; error surfaces as a
+    string via `SyncOp::Failed` (OK) but no streaming limit.
+
+---
+
+## 7. Security / Robustness
+
+63. 🔴 **Updater downloads an `.exe` with no checksum/signature verification and executes it** —
+    `ui/updater.rs:229-359`. MITM or a compromised GitHub account → RCE. Fix: verify a SHA256
+    asset from the release, then install.
+
+64. 🟠 **Auto-download on startup (#19) + no verification (#63)** is the biggest real-world risk.
+
+65. 🟡 **Plaintext password not zeroized** — `auth/local.rs`: `authenticate(&str)` keeps the
+    plaintext in memory. Minor for local-only storage.
+
+66. 🟡 **Hardcoded GitHub API URL** — `ui/updater.rs:107`: a fork/rename silently checks the
+    wrong repo; releases rely on tag strings since `published_at` isn't deserialized.
+
+---
+
+## Top 10 to Fix First
+
+1. FTS5 rowid/data correlation across all insert/update/delete/truncate paths (#1, #2, #61).
+2. Updater thread storm from render path + missing checksum verification (#18, #63, #64).
+3. `has_error_shake` never set; `shake.trigger()`/`play_error()` never called (#3).
+4. Header `truncate(7)` byte-split panic; release is `panic="abort"` (#32, #55).
+5. Resize hit-zones overlapping header buttons (#33).
+6. Silent in-memory DB fallback losing user data (#23, #58, #59).
+7. Dead/duplicate modules: `storage.rs`, `ui/settings.rs`, `ui/results.rs`, negative-id
+   sentinel (#47, #48, #49).
+8. Continuous repaint + full per-frame text layout = battery/CPU drain (#24, #25, #26).
+9. Editor double-insert into `passages`+`texts` (#7); FTS insert errors swallowed (#59).
+10. Esc overload + footer hints contradicting behavior (#34); "Back to Typing" restarts (#4).

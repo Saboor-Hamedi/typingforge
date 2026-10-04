@@ -72,7 +72,7 @@ impl AppUpdater {
     }
 
     pub fn get_status(&self) -> UpdateStatus {
-        let mut s = self.status.lock().unwrap();
+        let mut s = self.status.lock().unwrap_or_else(|p| p.into_inner());
         if *s == UpdateStatus::UpToDate {
             if let Ok(t_opt) = self.up_to_date_time.lock() {
                 if let Some(instant) = *t_opt {
@@ -86,7 +86,7 @@ impl AppUpdater {
     }
 
     pub fn reset_to_idle(&self) {
-        let mut s = self.status.lock().unwrap();
+        let mut s = self.status.lock().unwrap_or_else(|p| p.into_inner());
         *s = UpdateStatus::Idle;
     }
 
@@ -99,7 +99,7 @@ impl AppUpdater {
         let curr_ver = self.current_version.clone();
 
         {
-            let mut s = status_arc.lock().unwrap();
+            let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
             *s = UpdateStatus::Checking;
         }
 
@@ -174,41 +174,41 @@ impl AppUpdater {
                                     };
 
                                     {
-                                        let mut r = release_arc.lock().unwrap();
+                                        let mut r = release_arc.lock().unwrap_or_else(|p| p.into_inner());
                                         *r = Some(rel_info.clone());
                                     }
 
                                     if silent_download && rel_info.asset_url.is_some() {
                                         Self::perform_download(status_arc, rel_info);
                                     } else {
-                                        let mut s = status_arc.lock().unwrap();
+                                        let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                                         *s = UpdateStatus::UpdateAvailable(remote_ver);
                                     }
                                 } else {
-                                    let mut s = status_arc.lock().unwrap();
+                                    let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                                     *s = UpdateStatus::UpToDate;
                                     if let Ok(mut t) = up_to_date_time_arc.lock() {
                                         *t = Some(std::time::Instant::now());
                                     }
                                 }
                             } else {
-                                let mut s = status_arc.lock().unwrap();
+                                let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                                 *s = UpdateStatus::UpToDate;
                             }
                         }
                         Err(e) => {
-                            let mut s = status_arc.lock().unwrap();
+                            let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                             *s = UpdateStatus::Error(format!("Could not parse release data: {e}"));
                         }
                     }
                 }
                 Ok(res) => {
-                    let mut s = status_arc.lock().unwrap();
+                    let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                     let err = String::from_utf8_lossy(&res.stderr);
                     *s = UpdateStatus::Error(format!("Server response error: {}", err.trim()));
                 }
                 Err(e) => {
-                    let mut s = status_arc.lock().unwrap();
+                    let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                     *s = UpdateStatus::Error(format!("Check failed: {e}"));
                 }
             }
@@ -217,8 +217,29 @@ impl AppUpdater {
 
     /// Triggers immediate background download of available update
     pub fn start_download(&self) {
-        let release_opt = self.release_info.lock().unwrap().clone();
+        let release_opt = self.release_info.lock().unwrap_or_else(|p| p.into_inner()).clone();
         if let Some(rel) = release_opt {
+            let total_bytes = rel.asset_size;
+            let total_mb = if total_bytes > 0 {
+                (total_bytes as f32) / (1024.0 * 1024.0)
+            } else {
+                15.0 // Approximate default if size wasn't provided in JSON
+            };
+
+            // Transition status to Downloading synchronously to prevent multiple thread spawns
+            {
+                let mut s = self.status.lock().unwrap_or_else(|p| p.into_inner());
+                if matches!(*s, UpdateStatus::Downloading { .. }) {
+                    return; // Already downloading
+                }
+                *s = UpdateStatus::Downloading {
+                    version: rel.version.clone(),
+                    progress_pct: 0.0,
+                    downloaded_mb: 0.0,
+                    total_mb,
+                };
+            }
+
             let status_arc = Arc::clone(&self.status);
             thread::spawn(move || {
                 Self::perform_download(status_arc, rel);
@@ -234,16 +255,6 @@ impl AppUpdater {
             } else {
                 15.0 // Approximate default if size wasn't provided in JSON
             };
-
-            {
-                let mut s = status_arc.lock().unwrap();
-                *s = UpdateStatus::Downloading {
-                    version: rel.version.clone(),
-                    progress_pct: 0.0,
-                    downloaded_mb: 0.0,
-                    total_mb,
-                };
-            }
 
             let temp_dir = std::env::temp_dir();
             let file_name = rel.asset_name.clone().unwrap_or_else(|| "forgetyping-windows-setup.exe".to_string());
@@ -278,13 +289,32 @@ impl AppUpdater {
                         match child.try_wait() {
                             Ok(Some(exit_status)) => {
                                 if exit_status.success() && target_file.exists() {
-                                    let mut s = status_arc.lock().unwrap();
-                                    *s = UpdateStatus::ReadyToInstall {
-                                        version: rel.version,
-                                        installer_path: target_file,
+                                    let downloaded_bytes = std::fs::metadata(&target_file)
+                                        .map(|m| m.len())
+                                        .unwrap_or(0);
+
+                                    // Verify file size integrity to prevent corrupted/truncated execution
+                                    let is_valid = if total_bytes > 0 {
+                                        downloaded_bytes == total_bytes
+                                    } else {
+                                        downloaded_bytes > 1024 * 1024 // At least 1 MB for executable setup
                                     };
+
+                                    let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
+                                    if is_valid {
+                                        *s = UpdateStatus::ReadyToInstall {
+                                            version: rel.version,
+                                            installer_path: target_file,
+                                        };
+                                    } else {
+                                        let _ = std::fs::remove_file(&target_file);
+                                        *s = UpdateStatus::Error(format!(
+                                            "Verification failed: installer size mismatch (expected {} bytes, got {} bytes).",
+                                            total_bytes, downloaded_bytes
+                                        ));
+                                    }
                                 } else {
-                                    let mut s = status_arc.lock().unwrap();
+                                    let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                                     *s = UpdateStatus::Error("Download failed to complete.".to_string());
                                 }
                                 break;
@@ -302,7 +332,7 @@ impl AppUpdater {
                                 };
 
                                 {
-                                    let mut s = status_arc.lock().unwrap();
+                                    let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                                     *s = UpdateStatus::Downloading {
                                         version: rel.version.clone(),
                                         progress_pct: pct,
@@ -313,7 +343,7 @@ impl AppUpdater {
                                 thread::sleep(std::time::Duration::from_millis(150));
                             }
                             Err(e) => {
-                                let mut s = status_arc.lock().unwrap();
+                                let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                                 *s = UpdateStatus::Error(format!("Download error: {e}"));
                                 break;
                             }
@@ -321,7 +351,7 @@ impl AppUpdater {
                     }
                 }
                 Err(e) => {
-                    let mut s = status_arc.lock().unwrap();
+                    let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
                     *s = UpdateStatus::Error(format!("Failed to start download: {e}"));
                 }
             }
@@ -332,6 +362,18 @@ impl AppUpdater {
     pub fn apply_and_restart(&self) {
         let current_status = self.get_status();
         if let UpdateStatus::ReadyToInstall { installer_path, .. } = current_status {
+            if !installer_path.exists() {
+                let mut s = self.status.lock().unwrap_or_else(|p| p.into_inner());
+                *s = UpdateStatus::Error("Installer executable not found on disk.".to_string());
+                return;
+            }
+            let file_size = std::fs::metadata(&installer_path).map(|m| m.len()).unwrap_or(0);
+            if file_size < 1024 {
+                let mut s = self.status.lock().unwrap_or_else(|p| p.into_inner());
+                *s = UpdateStatus::Error("Installer file is corrupt or empty.".to_string());
+                return;
+            }
+
             let os = std::env::consts::OS;
             if os == "windows" {
                 if installer_path.extension().and_then(|s| s.to_str()).map(|ext| ext.eq_ignore_ascii_case("exe")).unwrap_or(false) {
@@ -347,7 +389,7 @@ impl AppUpdater {
                     cmd.creation_flags(0x08000000);
                     let _ = cmd.arg(format!("/select,{}", installer_path.display())).spawn();
                 }
-            } else if let Some(ref rel) = *self.release_info.lock().unwrap() {
+            } else if let Some(ref rel) = *self.release_info.lock().unwrap_or_else(|p| p.into_inner()) {
                 // On macOS / Linux, open the release download URL
                 if os == "macos" {
                     let _ = Command::new("open").arg(&rel.html_url).spawn();
@@ -426,9 +468,12 @@ impl AppUpdater {
                     self.check_for_updates(true);
                 }
             }
-            UpdateStatus::UpdateAvailable(_) => {
-                // Automatically triggered download
-                let bg = theme.accent.linear_multiply(0.2);
+            UpdateStatus::UpdateAvailable(ver) => {
+                let bg = if resp.hovered() {
+                    theme.accent.linear_multiply(0.28)
+                } else {
+                    theme.accent.linear_multiply(0.18)
+                };
                 p.rect_filled(rect, rounding, bg);
                 p.rect_stroke(rect, rounding, Stroke::new(1.0, theme.accent));
 
@@ -439,8 +484,12 @@ impl AppUpdater {
                 p.line_segment([egui::Pos2::new(icon_x + 2.5, cy), egui::Pos2::new(icon_x, cy + 2.5)], Stroke::new(1.3, theme.accent));
 
                 let text_x = if compact { rect.min.x + 29.0 } else { rect.min.x + 42.0 };
-                p.text(egui::Pos2::new(text_x, cy), egui::Align2::LEFT_CENTER, "Starting…", egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), theme.accent);
-                self.start_download();
+                let label = if compact { format!("v{}", ver) } else { format!("Update v{}", ver) };
+                p.text(egui::Pos2::new(text_x, cy), egui::Align2::LEFT_CENTER, label, egui::FontId::monospace(if compact { 10.5 } else { 12.0 }), theme.accent);
+
+                if resp.clicked_by(egui::PointerButton::Primary) {
+                    self.start_download();
+                }
             }
             UpdateStatus::Downloading { progress_pct, .. } => {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
@@ -512,7 +561,8 @@ impl AppUpdater {
 
 fn is_version_newer(remote: &str, current: &str) -> bool {
     let parse = |v: &str| -> Vec<u32> {
-        v.trim_start_matches('v')
+        let clean = v.trim_start_matches('v').split('-').next().unwrap_or("");
+        clean
             .split('.')
             .filter_map(|s| s.parse::<u32>().ok())
             .collect()

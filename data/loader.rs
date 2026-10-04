@@ -277,16 +277,32 @@ impl ConfigLoader {
     }
 
     /// Saves the current configuration to `appData/typingforge/setting.json` in clean, pretty JSON.
-    pub fn save(config: &AppConfig) {
+    /// Logs any filesystem or serialization errors that occur.
+    pub fn save(config: &AppConfig) -> bool {
+        match Self::try_save(config) {
+            Ok(_) => true,
+            Err(e) => {
+                eprintln!("[ConfigLoader] Warning: could not persist settings to disk: {e}");
+                false
+            }
+        }
+    }
+
+    /// Attempts to save settings and returns an explicit error description on failure.
+    pub fn try_save(config: &AppConfig) -> Result<(), String> {
         let path = config_path();
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return Err(format!("Failed to create config directory {}: {e}", parent.display()));
+            }
         }
 
         let settings_file = SettingsFile::from(config);
-        if let Ok(content) = serde_json::to_string_pretty(&settings_file) {
-            let _ = std::fs::write(path, content);
-        }
+        let content = serde_json::to_string_pretty(&settings_file)
+            .map_err(|e| format!("Serialization error: {e}"))?;
+        std::fs::write(&path, content)
+            .map_err(|e| format!("File write error {}: {e}", path.display()))?;
+        Ok(())
     }
 }
 
