@@ -26,7 +26,7 @@ impl TypographicScaleTab {
             let frame = egui::Frame::none()
                 .fill(theme.bg_surface)
                 .stroke(Stroke::new(1.0, theme.border))
-                .rounding(8.0)
+                .rounding(10.0)
                 .inner_margin(egui::Margin::same(16.0));
 
             frame.show(ui, |ui| {

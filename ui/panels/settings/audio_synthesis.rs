@@ -39,7 +39,7 @@ impl AudioSynthesisTab {
                 ui.set_max_width(inner_w);
 
                 // Master Enable Toggle
-                crate::ui::components::UnifiedToggle::row(
+                crate::ui::toggle::UnifiedToggle::row(
                     ui,
                     &mut config.sound_enabled,
                     "Keystroke Audio Feedback",

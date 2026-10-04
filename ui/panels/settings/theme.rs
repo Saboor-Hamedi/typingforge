@@ -75,9 +75,15 @@ impl ThemeTab {
 
         let painter = ui.painter_at(rect);
 
-        // Card container background
-        painter.rect_filled(rect, 8.0, theme.bg_surface);
-        painter.rect_stroke(rect, 8.0, Stroke::new(if selected { 1.5 } else { 1.0 }, border_color));
+        // Card container background (border painted inside to avoid corner bleed)
+        crate::ui::style::paint_card_bordered(
+            &painter,
+            rect,
+            crate::ui::style::RADIUS_CARD,
+            theme.bg_surface,
+            border_color,
+            if selected { 1.5 } else { 1.0 },
+        );
 
         // Color swatches (bg, accent, text_correct, text_active)
         let swatches = [theme.bg, theme.accent, theme.text_correct, theme.text_active];

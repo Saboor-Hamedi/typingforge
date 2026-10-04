@@ -432,7 +432,7 @@ impl ProfileTab {
                     ui.vertical(|ui| {
                         ui.label(RichText::new("GUEST PREFERENCES").color(theme.text_dim).size(10.5).monospace());
                         ui.add_space(8.0);
-                        crate::ui::components::UnifiedToggle::row(
+                        crate::ui::toggle::UnifiedToggle::row(
                             ui,
                             &mut config.persist_guest_sessions,
                             "Persist Guest Sessions",

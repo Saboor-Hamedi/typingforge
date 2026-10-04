@@ -489,10 +489,10 @@ impl eframe::App for VelotypeApp {
         visuals.selection.bg_fill = theme.accent.linear_multiply(0.25);
         ctx.set_visuals(visuals);
 
-        // Borderless outer frame with exact zero margin
+        // Borderless outer frame with exact zero margin (2px corner radius)
         let frame = egui::Frame::none()
             .fill(theme.bg)
-            .rounding(14.0)
+            .rounding(crate::ui::style::RADIUS_WINDOW)
             .stroke(egui::Stroke::new(1.0, theme.border))
             .inner_margin(egui::Margin::ZERO);
 

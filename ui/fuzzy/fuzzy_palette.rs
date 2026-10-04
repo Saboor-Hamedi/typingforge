@@ -67,7 +67,9 @@ impl FuzzyPalette {
             self.results.clear();
             self.selected_index = 0;
         } else if let Ok(res) = DbQueries::search_passages(db, trimmed) {
-            self.results = res;
+            // Show at most 5 results for a fast, uncluttered command palette
+            const MAX_RESULTS: usize = 5;
+            self.results = res.into_iter().take(MAX_RESULTS).collect();
             if self.selected_index >= self.results.len() {
                 self.selected_index = 0;
             }
@@ -161,9 +163,14 @@ impl FuzzyPalette {
             .show(ctx, |ui| {
                 let p = ui.painter();
                 // Outer soft shadow & sleek modal card background
-                p.rect_filled(modal_rect.expand(4.0), 12.0, Color32::from_black_alpha(60));
-                p.rect_filled(modal_rect, 12.0, theme.bg);
-                p.rect_stroke(modal_rect, 12.0, Stroke::new(1.0, theme.border.linear_multiply(0.85)));
+                p.rect_filled(modal_rect.expand(4.0), crate::ui::style::RADIUS_CARD, Color32::from_black_alpha(60));
+                crate::ui::style::paint_card(
+                    &p,
+                    modal_rect,
+                    crate::ui::style::RADIUS_CARD,
+                    theme.bg,
+                    theme.border.linear_multiply(0.85),
+                );
 
                 let pad = 12.0;
                 let content_rect = modal_rect.shrink(pad);

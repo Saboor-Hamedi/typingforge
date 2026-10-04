@@ -1,6 +1,6 @@
 use crate::db::DbPassage;
 use crate::ui::theme::Theme;
-use egui::{Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
+use egui::{Color32, FontId, Pos2, Rect, Sense, Vec2};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResultItemAction {
@@ -34,17 +34,16 @@ impl FuzzyResultItem {
 
         // Subtle, lightweight selection & hover states
         if is_selected {
-            let sel_bg = theme.accent.linear_multiply(0.12);
-            painter.rect_filled(rect, rounding, sel_bg);
+            // Neutral selection so badge text stays the only accent element
+            painter.rect_filled(rect, rounding, Color32::from_white_alpha(12));
         } else if is_hovered {
-            painter.rect_filled(rect, rounding, Color32::from_white_alpha(10));
+            painter.rect_filled(rect, rounding, Color32::from_white_alpha(8));
         }
 
         let pad_x = 14.0;
         let right_pad = 14.0;
         let center_y = rect.center().y;
         let badge_font = FontId::proportional(11.5);
-        let subtle_border = Stroke::new(1.0, Color32::from_white_alpha(25)); // 10% opacity subtle border
 
         // ─────────────────────────────────────────────────────────────────
         // RIGHT SIDE: BADGES (Word count, Mode, Edit)
@@ -74,19 +73,17 @@ impl FuzzyResultItem {
             action = ResultItemAction::Edit;
         }
 
-        let edit_border = if edit_resp.hovered() {
-            Stroke::new(1.0, theme.accent.linear_multiply(0.55))
+        let edit_col = if edit_resp.hovered() {
+            theme.accent
         } else {
-            subtle_border
+            theme.accent.linear_multiply(0.85)
         };
-        // Transparent background: NO rect_filled!
-        painter.rect_stroke(edit_rect, 4.0, edit_border);
         painter.text(
             edit_rect.center(),
             egui::Align2::CENTER_CENTER,
             edit_label,
             badge_font.clone(),
-            theme.accent,
+            edit_col,
         );
 
         // 2. Mode Badge: EITHER "Word" OR "Time"
@@ -104,8 +101,7 @@ impl FuzzyResultItem {
             Vec2::new(mode_w, 22.0),
         );
 
-        // Transparent background: NO rect_filled!
-        painter.rect_stroke(mode_rect, 4.0, subtle_border);
+        // Text-only mode badge (no background/border)
         painter.text(
             mode_rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -123,8 +119,7 @@ impl FuzzyResultItem {
             Vec2::new(words_w, 22.0),
         );
 
-        // Transparent background: NO rect_filled!
-        painter.rect_stroke(words_rect, 4.0, subtle_border);
+        // Text-only word count badge (no background/border)
         painter.text(
             words_rect.center(),
             egui::Align2::CENTER_CENTER,

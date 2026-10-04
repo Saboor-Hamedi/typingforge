@@ -223,7 +223,7 @@ impl HeaderWidget {
                 } else {
                     egui::Rounding {
                         nw: 0.0,
-                        ne: 14.0,
+                        ne: crate::ui::style::RADIUS_WINDOW,
                         se: 0.0,
                         sw: 0.0,
                     }

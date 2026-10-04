@@ -124,7 +124,7 @@ impl CaretPhysicsTab {
             let controls_frame = egui::Frame::none()
                 .fill(theme.bg_surface)
                 .stroke(Stroke::new(1.0, theme.border))
-                .rounding(8.0)
+                .rounding(10.0)
                 .inner_margin(egui::Margin::same(16.0));
 
             controls_frame.show(ui, |ui| {

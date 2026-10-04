@@ -81,7 +81,7 @@ impl ConfirmModal {
                                     Frame::none()
                                         .fill(theme.bg)
                                         .stroke(Stroke::new(1.0, theme.border))
-                                        .rounding(5.0)
+                                        .rounding(6.0)
                                         .inner_margin(egui::Margin::symmetric(14.0, 6.0))
                                         .show(ui, |ui| {
                                             ui.horizontal(|ui| {
@@ -124,7 +124,7 @@ impl ConfirmModal {
                                                 .size(11.5),
                                         )
                                         .stroke(Stroke::new(1.0, theme.border))
-                                        .rounding(5.0)
+                                        .rounding(6.0)
                                         .min_size(Vec2::new(100.0, 30.0));
 
                                         if ui.add(cancel_btn).clicked() {
@@ -139,7 +139,7 @@ impl ConfirmModal {
                                                 .size(11.5),
                                         )
                                         .fill(Color32::from_rgb(210, 50, 50))
-                                        .rounding(5.0)
+                                        .rounding(6.0)
                                         .min_size(Vec2::new(140.0, 30.0));
 
                                         if ui.add(confirm_btn).clicked() {

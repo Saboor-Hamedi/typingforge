@@ -1,5 +1,5 @@
 use crate::data::AppConfig;
-use crate::ui::components::UnifiedToggle;
+use crate::ui::toggle::UnifiedToggle;
 use crate::ui::theme::Theme;
 use egui::{RichText, Stroke};
 

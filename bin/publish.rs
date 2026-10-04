@@ -318,9 +318,10 @@ fn main() {
     // ── 9. Push ───────────────────────────────────────────────────────────────
     step("Pushing commits and tag to GitHub");
     ensure_clean_remote(&cwd);
-    run_with_retry("git", &["push", "-u", "origin", "master"], &cwd, 3);
-    run_with_retry("git", &["push", "origin", &tag], &cwd, 3);
-    run_with_retry("git", &["push", "--tags"], &cwd, 3);
+    // Single push of the branch plus its annotated tags. Pushing the branch and
+    // the tag separately (or adding `--tags`) causes the release workflow to run
+    // twice for the same version.
+    run_with_retry("git", &["push", "-u", "origin", "master", "--follow-tags"], &cwd, 3);
     ok("Pushed to GitHub — CI/CD pipeline is now running!");
 
     println!("\n{BOLD}{GREEN}════════════════════════════════════════");

@@ -843,7 +843,7 @@ impl CustomTextsTab {
                                 let item_frame = Frame::none()
                                     .fill(theme.bg)
                                     .stroke(Stroke::new(1.0, theme.border))
-                                    .rounding(8.0)
+                                    .rounding(10.0)
                                     .inner_margin(egui::Margin::symmetric(14.0, 10.0));
 
                                 item_frame.show(ui, |ui| {
