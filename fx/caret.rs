@@ -74,6 +74,8 @@ pub struct CaretController {
     pub smoothness: f32,
     /// Multiplier for layered bloom glow intensity (0.0 to 1.0).
     pub glow_intensity: f32,
+    /// When true, the caret snaps instantly instead of gliding (minimal-motion mode).
+    pub reduced_motion: bool,
 }
 
 impl Default for CaretController {
@@ -92,6 +94,7 @@ impl Default for CaretController {
             base_width: 3.0,
             smoothness: 0.18,
             glow_intensity: 0.65,
+            reduced_motion: false,
         }
     }
 }
@@ -107,6 +110,15 @@ impl CaretController {
             self.is_typing = false;
         } else {
             self.idle_time += dt;
+        }
+
+        // Minimal-motion mode: track the target instantly without spring simulation
+        if self.reduced_motion {
+            self.current_pos = self.target_pos;
+            self.velocity = Vec2::ZERO;
+            self.current_width = self.target_width;
+            self.current_height = self.target_height;
+            return;
         }
 
         // Substep physics simulation with max 0.008s steps to eliminate numerical

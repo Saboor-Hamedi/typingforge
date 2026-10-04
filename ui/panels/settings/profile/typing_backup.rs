@@ -39,6 +39,7 @@ impl TypingBackup {
 
         let mut count = 0usize;
         let mut first = true;
+        let mut cancelled = false;
         let mut seen_hashes = std::collections::HashSet::new();
 
         db.with_conn(|conn| {
@@ -51,6 +52,7 @@ impl TypingBackup {
             while let Some(row) = rows.next()? {
                 if let Some(ref c) = cancel {
                     if c.load(Ordering::Relaxed) {
+                        cancelled = true;
                         break;
                     }
                 }
@@ -102,6 +104,7 @@ impl TypingBackup {
             while let Some(row) = text_rows.next()? {
                 if let Some(ref c) = cancel {
                     if c.load(Ordering::Relaxed) {
+                        cancelled = true;
                         break;
                     }
                 }
@@ -147,6 +150,10 @@ impl TypingBackup {
 
             Ok(())
         }).map_err(|e| format!("Export streaming error: {e}"))?;
+
+        if cancelled {
+            return Err("Export cancelled by user.".to_string());
+        }
 
         if let Some(ref p) = progress {
             p.store(count, Ordering::Relaxed);

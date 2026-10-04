@@ -56,7 +56,7 @@ impl UpdatesTab {
                     match status {
                         UpdateStatus::Idle => {
                             ui.label(
-                                RichText::new("typingforge automatically checks for updates in the background. You can also manually trigger a check below.")
+                                RichText::new("Velotype automatically checks for updates in the background. You can also manually trigger a check below.")
                                     .color(theme.text_dim)
                                     .size(11.5),
                             );
@@ -75,7 +75,7 @@ impl UpdatesTab {
                         }
                         UpdateStatus::UpToDate => {
                             ui.label(
-                                RichText::new(format!("✔ typingforge v{current_version} is running the latest version."))
+                                RichText::new(format!("✔ Velotype v{current_version} is running the latest version."))
                                     .color(Color32::from_rgb(52, 211, 153))
                                     .strong()
                                     .monospace()
@@ -101,7 +101,7 @@ impl UpdatesTab {
                                 ui.spinner();
                                 ui.add_space(8.0);
                                 ui.label(
-                                    RichText::new(format!("Downloading typingforge v{version}..."))
+                                    RichText::new(format!("Downloading Velotype v{version}..."))
                                         .color(theme.accent)
                                         .strong()
                                         .size(12.5),
@@ -147,7 +147,7 @@ impl UpdatesTab {
                                             .size(12.5),
                                     );
                                     ui.label(
-                                        RichText::new("Click the Restart button below to run the setup installer and update typingforge.")
+                                        RichText::new("Click the Restart button below to run the setup installer and update Velotype.")
                                             .color(theme.text_active)
                                             .size(11.5),
                                     );
@@ -164,7 +164,7 @@ impl UpdatesTab {
                 });
 
             // Card 2: Release Information & Notes
-            if let Some(ref rel) = *updater.release_info.lock().unwrap() {
+            if let Some(ref rel) = *updater.release_info.lock().unwrap_or_else(|p| p.into_inner()) {
                 ui.add_space(16.0);
                 Frame::none()
                     .fill(theme.bg_surface)

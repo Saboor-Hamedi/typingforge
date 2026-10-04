@@ -3,8 +3,6 @@ pub mod confirm;
 pub mod fuzzy;
 pub mod header;
 pub mod panels;
-pub mod results;
-pub mod settings;
 pub mod theme;
 pub mod typing_area;
 pub mod updater;

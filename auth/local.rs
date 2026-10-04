@@ -35,11 +35,17 @@ impl LocalAuth {
         password: &str,
     ) -> Result<User, String> {
         let trimmed_user = username.trim();
-        if trimmed_user.len() < 2 {
+        if trimmed_user.chars().count() < 2 {
             return Err("Username must be at least 2 characters long".to_string());
         }
-        if password.len() < 6 {
-            return Err("Password must be at least 6 characters long".to_string());
+        if trimmed_user.chars().count() > 32 {
+            return Err("Username must be at most 32 characters long".to_string());
+        }
+        if trimmed_user.chars().any(char::is_whitespace) {
+            return Err("Username cannot contain spaces".to_string());
+        }
+        if password.chars().count() < 3 {
+            return Err("Password must be at least 3 characters long".to_string());
         }
 
         // Check if username is already taken (unique check)

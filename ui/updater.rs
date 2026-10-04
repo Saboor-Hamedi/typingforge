@@ -1,5 +1,7 @@
 use crate::ui::theme::Theme;
 use egui::{Color32, Rect, Stroke, Vec2};
+use std::fs::File;
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::Command;
 #[cfg(target_os = "windows")]
@@ -31,6 +33,9 @@ pub struct ReleaseInfo {
     pub asset_url: Option<String>,
     pub asset_name: Option<String>,
     pub asset_size: u64,
+    /// Optional URL of a checksum manifest (`sha256sums.txt` / `checksums.txt` /
+    /// `<asset>.sha256`) published alongside the release assets.
+    pub checksum_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,14 +168,29 @@ impl AppUpdater {
                                     }
 
                                     let asset_size = matched_asset.as_ref().and_then(|a| a.size).unwrap_or(0);
+                                    let asset_name = matched_asset.as_ref().map(|a| a.name.clone());
+
+                                    // Locate an optional checksum manifest published with the release
+                                    let checksum_url = release
+                                        .assets
+                                        .iter()
+                                        .find(|a| {
+                                            let n = a.name.to_ascii_lowercase();
+                                            n == "checksums.txt"
+                                                || n == "sha256sums.txt"
+                                                || n.ends_with(".sha256")
+                                        })
+                                        .map(|a| a.browser_download_url.clone());
+
                                     let rel_info = ReleaseInfo {
                                         version: remote_ver.clone(),
                                         tag_name: release.tag_name.clone(),
                                         html_url: release.html_url.clone(),
                                         release_notes: release.body.unwrap_or_default(),
                                         asset_url: matched_asset.as_ref().map(|a| a.browser_download_url.clone()),
-                                        asset_name: matched_asset.as_ref().map(|a| a.name.clone()),
+                                        asset_name,
                                         asset_size,
+                                        checksum_url,
                                     };
 
                                     {
@@ -294,24 +314,40 @@ impl AppUpdater {
                                         .unwrap_or(0);
 
                                     // Verify file size integrity to prevent corrupted/truncated execution
-                                    let is_valid = if total_bytes > 0 {
+                                    let size_valid = if total_bytes > 0 {
                                         downloaded_bytes == total_bytes
                                     } else {
                                         downloaded_bytes > 1024 * 1024 // At least 1 MB for executable setup
                                     };
 
                                     let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
-                                    if is_valid {
-                                        *s = UpdateStatus::ReadyToInstall {
-                                            version: rel.version,
-                                            installer_path: target_file,
-                                        };
-                                    } else {
+                                    if !size_valid {
                                         let _ = std::fs::remove_file(&target_file);
                                         *s = UpdateStatus::Error(format!(
                                             "Verification failed: installer size mismatch (expected {} bytes, got {} bytes).",
                                             total_bytes, downloaded_bytes
                                         ));
+                                    } else {
+                                        match Self::verify_checksum(&rel, &target_file) {
+                                            Ok(true) => {
+                                                *s = UpdateStatus::ReadyToInstall {
+                                                    version: rel.version,
+                                                    installer_path: target_file,
+                                                };
+                                            }
+                                            Ok(false) => {
+                                                // No checksum manifest published: fall back to size check only.
+                                                eprintln!("[Updater] Warning: no checksum manifest found; relying on size verification.");
+                                                *s = UpdateStatus::ReadyToInstall {
+                                                    version: rel.version,
+                                                    installer_path: target_file,
+                                                };
+                                            }
+                                            Err(e) => {
+                                                let _ = std::fs::remove_file(&target_file);
+                                                *s = UpdateStatus::Error(format!("Checksum verification failed: {e}"));
+                                            }
+                                        }
                                     }
                                 } else {
                                     let mut s = status_arc.lock().unwrap_or_else(|p| p.into_inner());
@@ -398,6 +434,69 @@ impl AppUpdater {
                 }
             }
         }
+    }
+
+    /// Verifies the downloaded installer against the release checksum manifest.
+    ///
+    /// Returns `Ok(true)` when a checksum was found and matched, `Ok(false)` when
+    /// the release publishes no checksum manifest, and `Err` on mismatch or I/O
+    /// failure.
+    fn verify_checksum(rel: &ReleaseInfo, file: &std::path::Path) -> Result<bool, String> {
+        let Some(url) = &rel.checksum_url else {
+            return Ok(false);
+        };
+
+        let manifest = Self::curl_text(url)?;
+        let file_name = rel
+            .asset_name
+            .as_deref()
+            .or_else(|| file.file_name().and_then(|s| s.to_str()))
+            .unwrap_or_default();
+
+        let expected = parse_checksum_manifest(&manifest, file_name)
+            .ok_or_else(|| "checksum manifest did not list the installer".to_string())?;
+
+        let actual = Self::sha256_file(file)?;
+        if actual.eq_ignore_ascii_case(&expected) {
+            Ok(true)
+        } else {
+            Err(format!("expected {expected}, got {actual}"))
+        }
+    }
+
+    /// Fetches a small text resource over HTTPS using the system `curl`.
+    fn curl_text(url: &str) -> Result<String, String> {
+        let curl_prog = if cfg!(target_os = "windows") { "curl.exe" } else { "curl" };
+        let mut cmd = Command::new(curl_prog);
+        cmd.stdin(std::process::Stdio::null());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+        let out = cmd
+            .args(["-L", "-s", "--connect-timeout", "15", "--max-time", "30", url])
+            .output()
+            .map_err(|e| format!("could not fetch checksum manifest: {e}"))?;
+
+        if !out.status.success() {
+            return Err("checksum manifest request failed".to_string());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    }
+
+    /// Computes the SHA-256 digest of a file as lowercase hex.
+    fn sha256_file(path: &std::path::Path) -> Result<String, String> {
+        use sha2::{Digest, Sha256};
+
+        let mut file = File::open(path).map_err(|e| format!("could not open installer for hashing: {e}"))?;
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf).map_err(|e| format!("could not read installer: {e}"))?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok(format!("{:x}", hasher.finalize()))
     }
 
     /// Renders the sleek interactive update button (compact in header, full in settings)
@@ -557,6 +656,27 @@ impl AppUpdater {
 
         resp
     }
+}
+
+/// Parses a `sha256sum`-style manifest and returns the lowercase hex digest for
+/// `file_name`, accepting both `<hash>  <name>` and `<hash> *<name>` formats.
+fn parse_checksum_manifest(manifest: &str, file_name: &str) -> Option<String> {
+    for line in manifest.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let Some(hash) = parts.next() else { continue };
+        let name = parts.next().unwrap_or("").trim_start_matches('*');
+        if hash.len() == 64
+            && hash.bytes().all(|b| b.is_ascii_hexdigit())
+            && (name == file_name || name.ends_with(file_name))
+        {
+            return Some(hash.to_string());
+        }
+    }
+    None
 }
 
 fn is_version_newer(remote: &str, current: &str) -> bool {

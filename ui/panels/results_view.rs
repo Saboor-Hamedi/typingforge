@@ -13,6 +13,7 @@ impl ResultsView {
         is_personal_best: bool,
         pb_banner_timer: f32,
         on_restart: &mut bool,
+        on_back: &mut bool,
         on_dismiss_pb: &mut bool,
     ) {
         ui.vertical(|ui| {
@@ -116,7 +117,7 @@ impl ResultsView {
                 ui.spacing_mut().item_spacing = Vec2::new(12.0, 0.0);
 
                 if UnifiedButton::show(ui, "← Back to Typing", ButtonVariant::Secondary, theme, 140.0).clicked() {
-                    *on_restart = true;
+                    *on_back = true;
                 }
 
                 if UnifiedButton::show(ui, "▶ Play Again (Tab)", ButtonVariant::Primary, theme, 160.0).clicked() {

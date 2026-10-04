@@ -10,6 +10,7 @@ use crate::ui::components::{ButtonVariant, UnifiedButton, UnifiedInput};
 use crate::ui::confirm::ConfirmModal;
 use crate::ui::theme::Theme;
 use egui::{Color32, Pos2, RichText, Vec2};
+use zeroize::Zeroize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthMode {
@@ -42,6 +43,12 @@ pub struct ProfileTabState {
     pub sync_op: Arc<std::sync::Mutex<SyncOp>>,
     pub sync_progress: Arc<AtomicUsize>,
     pub sync_cancel: Arc<AtomicBool>,
+    /// Session version at which `stats_cache` was computed.
+    pub stats_version: u64,
+    /// Cached `(test_count, avg_wpm, best_wpm)` aggregate for the active user.
+    pub stats_cache: Option<(usize, f32, f32)>,
+    /// User id the cached aggregate belongs to.
+    pub stats_user: Option<i64>,
 }
 
 impl Default for ProfileTabState {
@@ -59,6 +66,9 @@ impl Default for ProfileTabState {
             sync_op: Arc::new(std::sync::Mutex::new(SyncOp::Idle)),
             sync_progress: Arc::new(AtomicUsize::new(0)),
             sync_cancel: Arc::new(AtomicBool::new(false)),
+            stats_version: u64::MAX,
+            stats_cache: None,
+            stats_user: None,
         }
     }
 }
@@ -73,6 +83,7 @@ impl ProfileTab {
         theme: &Theme,
         db: &DatabaseConnection,
         current_user: &mut Option<User>,
+        sessions_version: u64,
     ) {
         ui.vertical(|ui| {
             ui.add_space(8.0);
@@ -141,9 +152,17 @@ impl ProfileTab {
                         ui.separator();
                         ui.add_space(14.0);
 
-                        // Fetch Stats Summary from DB via single $O(1)$ SQL aggregate
-                        let (test_count, avg_wpm, best_wpm) = DbQueries::get_user_stats_summary(db, Some(user.id))
-                            .unwrap_or((0, 0.0, 0.0));
+                        // Fetch Stats Summary from DB via single O(1) SQL aggregate,
+                        // refreshed only when the user or session history changes.
+                        if state.stats_user != Some(user.id)
+                            || state.stats_version != sessions_version
+                            || state.stats_cache.is_none()
+                        {
+                            state.stats_cache = DbQueries::get_user_stats_summary(db, Some(user.id)).ok();
+                            state.stats_user = Some(user.id);
+                            state.stats_version = sessions_version;
+                        }
+                        let (test_count, avg_wpm, best_wpm) = state.stats_cache.unwrap_or((0, 0.0, 0.0));
 
                         // Stats spread evenly across full card width
                         ui.horizontal(|ui| {
@@ -361,8 +380,8 @@ impl ProfileTab {
                                                 *current_user = Some(user);
                                                 state.auth_error = None;
                                                 state.auth_success = Some("Logged in successfully.".to_string());
-                                                state.password_input.clear();
-                                                state.confirm_password_input.clear();
+                                                state.password_input.zeroize();
+                                                state.confirm_password_input.zeroize();
                                             }
                                             Err(err) => {
                                                 state.auth_error = Some(err);
@@ -380,8 +399,8 @@ impl ProfileTab {
                                                     *current_user = Some(user);
                                                     state.auth_error = None;
                                                     state.auth_success = Some("Account created successfully!".to_string());
-                                                    state.password_input.clear();
-                                                    state.confirm_password_input.clear();
+                                                    state.password_input.zeroize();
+                                                    state.confirm_password_input.zeroize();
                                                 }
                                                 Err(err) => {
                                                     state.auth_error = Some(err);
@@ -578,15 +597,15 @@ impl ProfileTab {
                                     let cancel_arc = Arc::clone(&state.sync_cancel);
                                     prog_arc.store(0, Ordering::Relaxed);
                                     cancel_arc.store(false, Ordering::Relaxed);
-                                    *op_arc.lock().unwrap() = SyncOp::Exporting;
+                                    *op_arc.lock().unwrap_or_else(|p| p.into_inner()) = SyncOp::Exporting;
 
                                     std::thread::spawn(move || {
                                         match TypingBackup::export_to_file(&db_clone, &path, Some(prog_arc), Some(cancel_arc)) {
                                             Ok(count) => {
-                                                *op_arc.lock().unwrap() = SyncOp::Completed(format!("Exported {count} typing sentences successfully."));
+                                                *op_arc.lock().unwrap_or_else(|p| p.into_inner()) = SyncOp::Completed(format!("Exported {count} typing sentences successfully."));
                                             }
                                             Err(e) => {
-                                                *op_arc.lock().unwrap() = SyncOp::Failed(e);
+                                                *op_arc.lock().unwrap_or_else(|p| p.into_inner()) = SyncOp::Failed(e);
                                             }
                                         }
                                     });
@@ -607,15 +626,15 @@ impl ProfileTab {
                                     let cancel_arc = Arc::clone(&state.sync_cancel);
                                     prog_arc.store(0, Ordering::Relaxed);
                                     cancel_arc.store(false, Ordering::Relaxed);
-                                    *op_arc.lock().unwrap() = SyncOp::Importing;
+                                    *op_arc.lock().unwrap_or_else(|p| p.into_inner()) = SyncOp::Importing;
 
                                     std::thread::spawn(move || {
                                         match TypingImport::import_from_file(&db_clone, user_id, &path, Some(prog_arc), Some(cancel_arc)) {
                                             Ok(count) => {
-                                                *op_arc.lock().unwrap() = SyncOp::Completed(format!("Imported {count} typing sentences successfully."));
+                                                *op_arc.lock().unwrap_or_else(|p| p.into_inner()) = SyncOp::Completed(format!("Imported {count} typing sentences successfully."));
                                             }
                                             Err(e) => {
-                                                *op_arc.lock().unwrap() = SyncOp::Failed(e);
+                                                *op_arc.lock().unwrap_or_else(|p| p.into_inner()) = SyncOp::Failed(e);
                                             }
                                         }
                                     });

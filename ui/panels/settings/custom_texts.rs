@@ -78,9 +78,9 @@ pub struct CustomTextsTabState {
     /// Creation mode (word count vs timer).
     pub mode: PassageCreationMode,
     /// Target word count option.
-    pub word_target: usize,     // 20, 40
+    pub word_target: usize,     // 25, 40, 120
     /// Target duration option in seconds.
-    pub time_target_sec: usize, // 20, 40
+    pub time_target_sec: usize, // 25, 40, 60
     /// Temporary toast feedback (message, expiration timestamp).
     pub toast_message: Option<(String, f64)>, // (message, expiry_timestamp)
     /// Storage limit notice banner.
@@ -158,7 +158,7 @@ impl CustomTextsTab {
                     .size(13.0),
             );
             ui.label(
-                RichText::new("Design custom sentences with strict 25/40 word limits, live telemetry counters, and instant practice.")
+                RichText::new("Design custom sentences with strict 25/40/120-word limits, live telemetry counters, and instant practice.")
                     .color(theme.text_dim)
                     .monospace()
                     .size(11.0),
@@ -211,7 +211,7 @@ impl CustomTextsTab {
                 }
                 ui.add_space(10.0);
 
-                // 4 Uniform Selection Buttons: Word Mode, Time Mode, 20 Limit, 40 Limit
+                // 4 Uniform Selection Buttons: Word Mode, Time Mode, 25 Limit, 40 Limit
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
 
@@ -234,36 +234,26 @@ impl CustomTextsTab {
                     // Divider space
                     ui.add_space(8.0);
 
-                    // 3 & 4. Limit Buttons (Uniform styling matching mode buttons)
+                    // 3+. Limit Buttons (Uniform styling matching mode buttons)
                     match state.mode {
                         PassageCreationMode::Words => {
-                            let is_20 = state.word_target == 20;
-                            let v_20 = if is_20 { ButtonVariant::Primary } else { ButtonVariant::Secondary };
-                            if UnifiedButton::show(ui, "20 Words", v_20, theme, 105.0).clicked() {
-                                state.word_target = 20;
-                                state.limit_notice = None;
-                            }
-
-                            let is_40 = state.word_target == 40;
-                            let v_40 = if is_40 { ButtonVariant::Primary } else { ButtonVariant::Secondary };
-                            if UnifiedButton::show(ui, "40 Words", v_40, theme, 105.0).clicked() {
-                                state.word_target = 40;
-                                state.limit_notice = None;
+                            for (label, value) in [("25 Words", 25usize), ("40 Words", 40), ("120 Words", 120)] {
+                                let selected = state.word_target == value;
+                                let variant = if selected { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                                if UnifiedButton::show(ui, label, variant, theme, 90.0).clicked() {
+                                    state.word_target = value;
+                                    state.limit_notice = None;
+                                }
                             }
                         }
                         PassageCreationMode::Time => {
-                            let is_20 = state.time_target_sec == 20;
-                            let v_20 = if is_20 { ButtonVariant::Primary } else { ButtonVariant::Secondary };
-                            if UnifiedButton::show(ui, "20 Seconds", v_20, theme, 105.0).clicked() {
-                                state.time_target_sec = 20;
-                                state.limit_notice = None;
-                            }
-
-                            let is_40 = state.time_target_sec == 40;
-                            let v_40 = if is_40 { ButtonVariant::Primary } else { ButtonVariant::Secondary };
-                            if UnifiedButton::show(ui, "40 Seconds", v_40, theme, 105.0).clicked() {
-                                state.time_target_sec = 40;
-                                state.limit_notice = None;
+                            for (label, value) in [("25 Seconds", 25usize), ("40 Seconds", 40), ("60 Seconds", 60)] {
+                                let selected = state.time_target_sec == value;
+                                let variant = if selected { ButtonVariant::Primary } else { ButtonVariant::Secondary };
+                                if UnifiedButton::show(ui, label, variant, theme, 90.0).clicked() {
+                                    state.time_target_sec = value;
+                                    state.limit_notice = None;
+                                }
                             }
                         }
                     }
@@ -292,7 +282,7 @@ impl CustomTextsTab {
                 UnifiedInput::multiline(
                     ui,
                     &mut state.content_input,
-                    "Type or paste practice text here (strict 25 or 40 word limits enforced)...",
+                    "Type or paste practice text here (strict 25/40/120 word limits enforced)...",
                     theme,
                     inner_w,
                     4,
@@ -306,11 +296,15 @@ impl CustomTextsTab {
 
                 let max_words = match state.mode {
                     PassageCreationMode::Words => state.word_target,
-                    PassageCreationMode::Time => match state.time_target_sec {
-                        15 => 25,
-                        30 => 40,
-                        _ => 80,
-                    },
+                    PassageCreationMode::Time => {
+                        if state.time_target_sec >= 60 {
+                            60
+                        } else if state.time_target_sec >= 40 {
+                            40
+                        } else {
+                            25
+                        }
+                    }
                 };
 
                 let max_chars = max_words * 7;
@@ -460,6 +454,7 @@ impl CustomTextsTab {
                                 let (mode, word_target, duration) = match state.mode {
                                     PassageCreationMode::Words => {
                                         let wt = match state.word_target {
+                                            120 => WordCountTarget::Words120,
                                             40 => WordCountTarget::Words40,
                                             _ => WordCountTarget::Words25,
                                         };
@@ -467,6 +462,7 @@ impl CustomTextsTab {
                                     }
                                     PassageCreationMode::Time => {
                                         let td = match state.time_target_sec {
+                                            60 => TimedDuration::Sec60,
                                             40 => TimedDuration::Sec40,
                                             _ => TimedDuration::Sec25,
                                         };
@@ -511,6 +507,7 @@ impl CustomTextsTab {
                                 let (mode, word_target, duration) = match state.mode {
                                     PassageCreationMode::Words => {
                                         let wt = match state.word_target {
+                                            120 => WordCountTarget::Words120,
                                             40 => WordCountTarget::Words40,
                                             _ => WordCountTarget::Words25,
                                         };
@@ -518,6 +515,7 @@ impl CustomTextsTab {
                                     }
                                     PassageCreationMode::Time => {
                                         let td = match state.time_target_sec {
+                                            60 => TimedDuration::Sec60,
                                             40 => TimedDuration::Sec40,
                                             _ => TimedDuration::Sec25,
                                         };
@@ -598,7 +596,7 @@ impl CustomTextsTab {
 
                 // Drain any completed background generator status
                 {
-                    let mut st = state.generator_status.lock().unwrap();
+                    let mut st = state.generator_status.lock().unwrap_or_else(|p| p.into_inner());
                     match std::mem::replace(&mut *st, GeneratorStatus::Idle) {
                         GeneratorStatus::Success(msg) => {
                             state.generate_success = Some(msg);
@@ -747,12 +745,12 @@ impl CustomTextsTab {
                                             Some(cancel_arc),
                                         ) {
                                             Ok(n) => {
-                                                *status_arc.lock().unwrap() = GeneratorStatus::Success(
+                                                *status_arc.lock().unwrap_or_else(|p| p.into_inner()) = GeneratorStatus::Success(
                                                     format!("Successfully generated and inserted {n} normalized passages into database!"),
                                                 );
                                             }
                                             Err(e) => {
-                                                *status_arc.lock().unwrap() = GeneratorStatus::Error(e);
+                                                *status_arc.lock().unwrap_or_else(|p| p.into_inner()) = GeneratorStatus::Error(e);
                                             }
                                         }
                                         is_gen_arc.store(false, Ordering::Relaxed);
@@ -930,19 +928,24 @@ impl CustomTextsTab {
                                                 state.editing_passage_id = Some(passage.id);
                                                 state.title_input = passage.category.clone();
                                                 state.content_input = passage.text_content.clone();
-                                                if passage.word_count <= 20 {
+                                                if passage.word_count <= 25 {
                                                     state.mode = PassageCreationMode::Words;
-                                                    state.word_target = 20;
-                                                } else {
+                                                    state.word_target = 25;
+                                                } else if passage.word_count <= 40 {
                                                     state.mode = PassageCreationMode::Words;
                                                     state.word_target = 40;
+                                                } else {
+                                                    state.mode = PassageCreationMode::Words;
+                                                    state.word_target = 120;
                                                 }
                                                 state.limit_notice = None;
                                             }
 
                                             // 3. Practice (leftmost of the 3 buttons)
                                             if UnifiedButton::show(ui, "Practice", ButtonVariant::Secondary, theme, 72.0).clicked() {
-                                                let wt = if passage.word_count >= 30 {
+                                                let wt = if passage.word_count >= 80 {
+                                                    WordCountTarget::Words120
+                                                } else if passage.word_count >= 30 {
                                                     WordCountTarget::Words40
                                                 } else {
                                                     WordCountTarget::Words25

@@ -31,6 +31,8 @@ pub enum TimedDuration {
     Sec25 = 25,
     /// 40-second endurance duration.
     Sec40 = 40,
+    /// 60-second long-form duration.
+    Sec60 = 60,
 }
 
 /// Target word count options for [`GameMode::Words`].
@@ -40,6 +42,8 @@ pub enum WordCountTarget {
     Words25 = 25,
     /// Extended 40-word accuracy test.
     Words40 = 40,
+    /// Marathon 120-word endurance test.
+    Words120 = 120,
 }
 
 /// High-level lifecycle state machine for an active typing session.
@@ -177,7 +181,9 @@ impl GameEngine {
 
         let word_count = match self.config.mode {
             GameMode::Words => self.config.word_target as usize,
-            GameMode::Timed => 120,
+            // Timed mode generates enough words to comfortably fill the duration
+            // even at very high typing speeds (roughly 4 words per second).
+            GameMode::Timed => (self.config.timed_duration as usize * 4).max(120),
         };
 
         let generated = TextGenerator::generate_words(
@@ -299,6 +305,18 @@ impl GameEngine {
             .unwrap_or(true);
 
         if should_record {
+            // Cap velocity history to prevent memory explosion during marathon tests
+            const MAX_VELOCITY_POINTS: usize = 1200;
+            if self.stats.velocity_history.len() >= MAX_VELOCITY_POINTS {
+                let mut downsampled = Vec::with_capacity(MAX_VELOCITY_POINTS / 2 + 1);
+                for (i, pt) in self.stats.velocity_history.drain(..).enumerate() {
+                    if i % 2 == 0 {
+                        downsampled.push(pt);
+                    }
+                }
+                self.stats.velocity_history = downsampled;
+            }
+
             self.stats.velocity_history.push(VelocityPoint {
                 time_secs: self.elapsed_time,
                 net_wpm: net,
@@ -374,7 +392,11 @@ impl GameEngine {
             self.last_keystroke_time = self.elapsed_time;
         }
 
-        let latency_ms = ((self.elapsed_time - self.last_keystroke_time) * 1000.0).max(0.0) as i64;
+        let latency_ms = if self.stats.total_keystrokes == 0 {
+            0
+        } else {
+            ((self.elapsed_time - self.last_keystroke_time) * 1000.0).max(0.0) as i64
+        };
         self.last_keystroke_time = self.elapsed_time;
 
         let mut is_correct = false;
@@ -488,6 +510,9 @@ impl GameEngine {
                 let word = &mut self.words[self.current_word];
                 let limit = self.current_char.min(word.len());
                 for i in 0..limit {
+                    if word[i].status == CharStatus::Correct {
+                        self.streak = self.streak.saturating_sub(1);
+                    }
                     word[i].status = CharStatus::Pending;
                     word[i].typed = None;
                 }
@@ -497,6 +522,9 @@ impl GameEngine {
             let word = &mut self.words[self.current_word];
             if self.current_char > 0 {
                 self.current_char -= 1;
+                if word[self.current_char].status == CharStatus::Correct {
+                    self.streak = self.streak.saturating_sub(1);
+                }
                 word[self.current_char].status = CharStatus::Pending;
                 word[self.current_char].typed = None;
             } else if self.current_word > 0 {
@@ -505,6 +533,9 @@ impl GameEngine {
                 self.current_char = self.words[self.current_word].len();
                 if self.current_char > 0 {
                     self.current_char -= 1;
+                    if self.words[self.current_word][self.current_char].status == CharStatus::Correct {
+                        self.streak = self.streak.saturating_sub(1);
+                    }
                     self.words[self.current_word][self.current_char].status = CharStatus::Pending;
                     self.words[self.current_word][self.current_char].typed = None;
                 }

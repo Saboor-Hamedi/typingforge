@@ -4,6 +4,38 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 pub struct VelocityGraphWidget;
 
+/// Cached resampled graph geometry. The Catmull-Rom curve and instant polyline
+/// only change when the data or canvas geometry changes, so they are recomputed
+/// at most once per new sample rather than every frame.
+#[derive(Clone)]
+struct GraphCache {
+    key: u64,
+    instant: Vec<Pos2>,
+    spline: Vec<Pos2>,
+}
+
+fn graph_cache_key(history: &[VelocityPoint], max_wpm: f32, total_time: f32, rect: Rect) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    history.len().hash(&mut hasher);
+    if let Some(p) = history.first() {
+        p.time_secs.to_bits().hash(&mut hasher);
+        p.net_wpm.to_bits().hash(&mut hasher);
+    }
+    if let Some(p) = history.last() {
+        p.time_secs.to_bits().hash(&mut hasher);
+        p.net_wpm.to_bits().hash(&mut hasher);
+        p.instant_wpm.to_bits().hash(&mut hasher);
+    }
+    max_wpm.to_bits().hash(&mut hasher);
+    total_time.to_bits().hash(&mut hasher);
+    rect.min.x.to_bits().hash(&mut hasher);
+    rect.min.y.to_bits().hash(&mut hasher);
+    rect.width().to_bits().hash(&mut hasher);
+    rect.height().to_bits().hash(&mut hasher);
+    hasher.finish()
+}
+
 impl VelocityGraphWidget {
     pub fn draw(
         ui: &mut egui::Ui,
@@ -72,8 +104,31 @@ impl VelocityGraphWidget {
             Pos2::new(x, y)
         };
 
+        // Resample the instant polyline and Net WPM spline, cached between frames
+        let cache_id = egui::Id::new("velocity_graph_geometry_cache");
+        let key = graph_cache_key(history, max_wpm, total_time, draw_rect);
+        let cached: Option<GraphCache> = ui.ctx().data_mut(|d| d.get_temp(cache_id));
+        let cache = match cached {
+            Some(c) if c.key == key => c,
+            _ => {
+                let instant: Vec<Pos2> = history
+                    .iter()
+                    .map(|p| map_point(p.time_secs, p.instant_wpm))
+                    .collect();
+                let raw_net_points: Vec<Pos2> = history
+                    .iter()
+                    .map(|p| map_point(p.time_secs, p.net_wpm))
+                    .collect();
+                let steps = if raw_net_points.len() > 150 { 2 } else { 4 };
+                let spline = Self::catmull_rom_spline(&raw_net_points, steps);
+                let cache = GraphCache { key, instant, spline };
+                ui.ctx().data_mut(|d| d.insert_temp(cache_id, cache.clone()));
+                cache
+            }
+        };
+
         // Instant burst raw points
-        let instant_points: Vec<Pos2> = history.iter().map(|p| map_point(p.time_secs, p.instant_wpm)).collect();
+        let instant_points = &cache.instant;
         for i in 0..instant_points.len().saturating_sub(1) {
             painter.line_segment(
                 [instant_points[i], instant_points[i + 1]],
@@ -81,9 +136,7 @@ impl VelocityGraphWidget {
             );
         }
 
-        // Catmull-Rom spline interpolation for Net WPM
-        let raw_net_points: Vec<Pos2> = history.iter().map(|p| map_point(p.time_secs, p.net_wpm)).collect();
-        let spline_points = Self::catmull_rom_spline(&raw_net_points, 4);
+        let spline_points = &cache.spline;
 
         if spline_points.len() >= 2 {
             // Hardware vertical linear gradient fill under spline curve
@@ -159,7 +212,7 @@ impl VelocityGraphWidget {
                 let hover_time = (rel_x * total_time).clamp(0.0, total_time);
 
                 if let Some(closest) = history.iter().min_by(|a, b| {
-                    (a.time_secs - hover_time).abs().partial_cmp(&(b.time_secs - hover_time).abs()).unwrap()
+                    (a.time_secs - hover_time).abs().total_cmp(&(b.time_secs - hover_time).abs())
                 }) {
                     let pt_net = map_point(closest.time_secs, closest.net_wpm);
                     let pt_inst = map_point(closest.time_secs, closest.instant_wpm);

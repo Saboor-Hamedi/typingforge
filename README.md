@@ -206,6 +206,32 @@ typingforge Architecture
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
+## 📁 Repository & naming
+
+This project uses one product name — **Velotype** — across the UI, window title and documentation.
+Some internal/infrastructure identifiers intentionally retain the legacy `typingforge` name for
+backward compatibility with existing releases, update feeds and user data paths:
+
+| Identifier | Value | Notes |
+|---|---|---|
+| Product / application name | **Velotype** | Window title, header, docs |
+| Cargo package | `forgetyping` | Published artifact name |
+| GitHub repository | `typingforge` | Releases & update feed |
+| Data directory | `%APPDATA%/typingforge` | Includes legacy DB/config migration |
+
+### Build layout
+
+The Rust crate lives in the **`src/`** directory of this repository (it is its own git
+repository). All `cargo` commands must be run from there:
+
+```bash
+cd src
+cargo run --release
+```
+
+The four binaries are: `forgetyping` (the app), `publish` (release pipeline), and
+`generate_text` (corpus generator).
+
 <br/>
 
 <div align="center">

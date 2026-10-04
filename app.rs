@@ -8,7 +8,7 @@
 
 use crate::audio::AudioManager;
 use crate::data::{AppConfig, ConfigLoader};
-use crate::db::{DatabaseConnection, DbKeystrokeLog, DbQueries, DbSession, PersonalBest, User};
+use crate::db::{DatabaseConnection, DbKeystrokeLog, DbQueries, DbSession, PersonalBest, User, GUEST_USER_ID};
 use crate::fx::{CaretController, ParticleSystem, ScreenShake};
 use crate::typing::{GameEngine, GameMode, GameState, SessionConfig};
 use crate::ui::fuzzy::{FuzzyPalette, PaletteAction};
@@ -30,7 +30,7 @@ pub enum AppScreen {
     Editor,
 }
 
-/// The root `eframe` application state for TypingForge.
+/// The root `eframe` application state for Velotype.
 pub struct VelotypeApp {
     /// Active user preferences and persistent settings.
     config: AppConfig,
@@ -68,6 +68,9 @@ pub struct VelotypeApp {
     is_profile_dropdown_open: bool,
     /// Cached copy of configuration used to detect modifications and trigger auto-saves.
     last_saved_config: AppConfig,
+    /// Monotonic counter bumped whenever a session is persisted, used to
+    /// invalidate cached profile aggregates without per-frame queries.
+    sessions_version: u64,
 }
 
 impl VelotypeApp {
@@ -83,8 +86,8 @@ impl VelotypeApp {
             mode: config.default_mode,
             timed_duration: config.default_duration,
             word_target: config.default_word_count,
-            include_punctuation: false,
-            include_numbers: false,
+            include_punctuation: config.include_punctuation,
+            include_numbers: config.include_numbers,
         };
 
         let mut caret = CaretController::default();
@@ -92,12 +95,13 @@ impl VelotypeApp {
         caret.base_width = config.caret_width;
         caret.smoothness = config.caret_smoothness;
         caret.glow_intensity = config.caret_glow;
+        caret.reduced_motion = config.reduced_motion;
 
         let mut particles = ParticleSystem::default();
-        particles.enabled = config.particles_enabled;
+        particles.enabled = config.particles_enabled && !config.reduced_motion;
 
         let mut shake = ScreenShake::default();
-        shake.enabled = config.screen_shake_enabled;
+        shake.enabled = config.screen_shake_enabled && !config.reduced_motion;
 
         let mut audio = AudioManager::new();
         audio.enabled = config.sound_enabled;
@@ -134,6 +138,7 @@ impl VelotypeApp {
             was_focused: true,
             is_profile_dropdown_open: false,
             last_saved_config,
+            sessions_version: 0,
         };
         app.restart_game();
         app
@@ -192,7 +197,7 @@ impl VelotypeApp {
             GameMode::Words => self.engine.config.word_target as i64,
         };
 
-        let user_id = self.current_user.as_ref().map(|u| u.id).unwrap_or(0);
+        let user_id = self.current_user.as_ref().map(|u| u.id).unwrap_or(GUEST_USER_ID);
         let net_wpm = self.engine.stats.net_wpm as f64;
         let accuracy = self.engine.stats.accuracy as f64;
         let consistency = self.engine.stats.consistency as f64;
@@ -260,6 +265,7 @@ impl VelotypeApp {
         }
 
         // 3. PB Celebration banner (Brief 3s, skippable, non-blocking, Part 7)
+        self.sessions_version = self.sessions_version.wrapping_add(1);
         if is_new_pb {
             self.is_personal_best = true;
             self.pb_banner_timer = 3.0;
@@ -344,7 +350,8 @@ impl VelotypeApp {
                 ConfigLoader::save(&self.config);
                 self.current_screen = AppScreen::Typing;
             } else if self.current_screen == AppScreen::Results {
-                self.restart_game();
+                // Esc leaves the results view (matches the on-screen "Back to Typing" action)
+                self.current_screen = AppScreen::Typing;
             } else if self.current_screen == AppScreen::Typing {
                 self.restart_game();
             }
@@ -442,11 +449,15 @@ impl eframe::App for VelotypeApp {
         self.caret.base_width = self.config.caret_width;
         self.caret.smoothness = self.config.caret_smoothness;
         self.caret.glow_intensity = self.config.caret_glow;
-        self.particles.enabled = self.config.particles_enabled;
-        self.shake.enabled = self.config.screen_shake_enabled;
+        self.caret.reduced_motion = self.config.reduced_motion;
+        // Minimal-motion mode overrides particles and screen shake
+        self.particles.enabled = self.config.particles_enabled && !self.config.reduced_motion;
+        self.shake.enabled = self.config.screen_shake_enabled && !self.config.reduced_motion;
         self.audio.enabled = self.config.sound_enabled;
         self.audio.volume = self.config.sound_volume;
         self.audio.sound_preset = self.config.sound_preset;
+        self.engine.config.include_punctuation = self.config.include_punctuation;
+        self.engine.config.include_numbers = self.config.include_numbers;
 
         // Automatically persist settings immediately whenever any configuration value is modified
         if self.config != self.last_saved_config {
@@ -487,7 +498,7 @@ impl eframe::App for VelotypeApp {
 
         let is_typing_active = self.current_screen == AppScreen::Typing && self.engine.state == GameState::Running;
         let focus_factor = ctx.animate_bool_responsive(egui::Id::new("zen_focus_mode"), is_typing_active);
-        let chrome_alpha = egui::lerp(1.0..=0.28, focus_factor);
+        let chrome_alpha = egui::lerp(1.0..=0.55, focus_factor);
 
         let is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
 
@@ -641,6 +652,7 @@ impl eframe::App for VelotypeApp {
                             }
                             AppScreen::Results => {
                                 let mut restart = false;
+                                let mut back = false;
                                 let mut dismiss_pb = false;
                                 ResultsView::show(
                                     ui,
@@ -649,6 +661,7 @@ impl eframe::App for VelotypeApp {
                                     self.is_personal_best,
                                     self.pb_banner_timer,
                                     &mut restart,
+                                    &mut back,
                                     &mut dismiss_pb,
                                 );
                                 if dismiss_pb {
@@ -656,6 +669,8 @@ impl eframe::App for VelotypeApp {
                                 }
                                 if restart {
                                     self.restart_game();
+                                } else if back {
+                                    self.current_screen = AppScreen::Typing;
                                 }
                             }
                             AppScreen::Settings => {
@@ -670,6 +685,7 @@ impl eframe::App for VelotypeApp {
                                     &mut self.current_user,
                                     &mut passage_to_load,
                                     &mut is_open,
+                                    self.sessions_version,
                                 );
                                 let active_id = self.current_user.as_ref().map(|u| u.id);
                                 if self.config.active_user_id != active_id {
@@ -763,11 +779,19 @@ impl eframe::App for VelotypeApp {
                         theme.text_dim,
                     );
 
+                    // Hover tooltip explaining the abbreviated footer telemetry
+                    let metrics_tip_rect = Rect::from_min_max(
+                        Pos2::new(footer_rect.min.x + footer_margin, footer_rect.min.y),
+                        Pos2::new(footer_rect.center().x, footer_rect.max.y),
+                    );
+                    ui.interact(metrics_tip_rect, egui::Id::new("footer_metrics_tip"), egui::Sense::hover())
+                        .on_hover_text("Net = correct WPM  ·  Raw = all keystrokes WPM  ·  Accuracy = correct ÷ typed  ·  Streak = consecutive correct keys");
+
                     // Right status telemetry
                     let right_text = match self.current_screen {
                         AppScreen::Settings => format!("theme: {}  ·  esc return", theme.name),
                         AppScreen::Editor => "esc return  ·  enter apply".to_string(),
-                        AppScreen::Results => format!("theme: {}  ·  tab / enter restart", theme.name),
+                        AppScreen::Results => format!("theme: {}  ·  esc back  ·  tab / enter restart", theme.name),
                         AppScreen::Typing => format!("theme: {}  ·  ctrl+p palette  ·  ctrl+, settings  ·  tab / esc restart", theme.name),
                     };
 

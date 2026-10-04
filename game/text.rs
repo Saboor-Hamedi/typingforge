@@ -13,8 +13,7 @@ pub struct DisplayChar {
     pub expected: char,
     pub typed: Option<char>,
     pub status: CharStatus,
-    pub pop_anim: f32,   // 0.0 to 1.0 (ease-out bounce for correct keystroke)
-    pub shake_anim: f32, // 0.0 to 1.0 (decaying horizontal shake for mistake)
+    pub pop_anim: f32, // 0.0 to 1.0 (ease-out bounce for correct keystroke)
 }
 
 impl DisplayChar {
@@ -24,7 +23,6 @@ impl DisplayChar {
             typed: None,
             status: CharStatus::Pending,
             pop_anim: 0.0,
-            shake_anim: 0.0,
         }
     }
 }
@@ -49,17 +47,6 @@ pub const COMMON_WORDS: &[&str] = &[
     "simple", "steady", "rapid", "fluid", "hyper", "cyber", "neural", "atomic", "quantum", "zenith",
     "silent", "breath", "shadow", "flight", "portal", "silver", "golden", "streak", "impact", "blaze",
     "echo", "source", "module", "kernel", "packet", "switch", "client", "server", "beacon", "horizon",
-];
-
-pub const FAMOUS_QUOTES: &[&str] = &[
-    "Simplicity is the soul of efficiency.",
-    "Make it work, make it right, make it fast.",
-    "Programs must be written for people to read, and only incidentally for machines to execute.",
-    "First, solve the problem. Then, write the code.",
-    "Any fool can write code that a computer can understand. Good programmers write code that humans can understand.",
-    "The only way to go fast, is to go well.",
-    "Premature optimization is the root of all evil in programming.",
-    "Talk is cheap. Show me the code.",
 ];
 
 impl TextGenerator {
@@ -100,10 +87,5 @@ impl TextGenerator {
         }
 
         words
-    }
-
-    pub fn random_quote() -> String {
-        let mut rng = rand::thread_rng();
-        FAMOUS_QUOTES.choose(&mut rng).unwrap_or(&"Make it work, make it right, make it fast.").to_string()
     }
 }

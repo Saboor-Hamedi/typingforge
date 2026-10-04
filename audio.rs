@@ -1,4 +1,16 @@
 use rodio::{OutputStream, OutputStreamHandle, Source};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
+
+struct VoiceGuard {
+    voices: Arc<AtomicUsize>,
+}
+
+impl Drop for VoiceGuard {
+    fn drop(&mut self) {
+        self.voices.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SoundPreset {
@@ -72,6 +84,8 @@ pub struct AudioManager {
     pub volume: f32,
     pub sound_preset: SoundPreset,
     pub enabled: bool,
+    active_voices: Arc<AtomicUsize>,
+    last_click_ms: Arc<AtomicU64>,
 }
 
 impl AudioManager {
@@ -90,6 +104,8 @@ impl AudioManager {
             volume: 0.5,
             sound_preset: SoundPreset::Mechanical,
             enabled: true,
+            active_voices: Arc::new(AtomicUsize::new(0)),
+            last_click_ms: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -98,11 +114,34 @@ impl AudioManager {
             return;
         }
         let Some(handle) = &self.stream_handle else { return };
+
+        // Voice concurrency limiting: max 6 overlapping clicks and minimum 14ms interval
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        let last = self.last_click_ms.load(Ordering::Relaxed);
+        if now_ms.saturating_sub(last) < 14 {
+            return;
+        }
+
+        if self.active_voices.load(Ordering::Relaxed) >= 6 {
+            return;
+        }
+
+        self.last_click_ms.store(now_ms, Ordering::Relaxed);
+        self.active_voices.fetch_add(1, Ordering::Relaxed);
+
         let vol = self.volume;
         let preset = self.sound_preset;
+        let guard = VoiceGuard {
+            voices: Arc::clone(&self.active_voices),
+        };
 
         let _ = handle.play_raw(
             from_fn(move || {
+                let _voice_guard = guard;
                 let mut sample_idx = 0;
                 let sample_rate = 44100;
 

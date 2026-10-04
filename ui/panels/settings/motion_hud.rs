@@ -40,6 +40,18 @@ impl MotionHudTab {
 
                 UnifiedToggle::row(
                     ui,
+                    &mut config.reduced_motion,
+                    "Reduced Motion",
+                    "Minimal-motion mode: disables particles, screen shake and kinetic caret glide",
+                    theme,
+                );
+
+                ui.add_space(6.0);
+                ui.separator();
+                ui.add_space(6.0);
+
+                UnifiedToggle::row(
+                    ui,
                     &mut config.particles_enabled,
                     "Keypress Particle Sparks",
                     "Emit glowing kinetic micro-particles on stroke impacts",
@@ -79,6 +91,48 @@ impl MotionHudTab {
                     &mut config.show_velocity_graph,
                     "Velocity Telemetry Graph",
                     "Real-time kinetic velocity waveform in the footer bar",
+                    theme,
+                );
+            });
+
+            ui.add_space(16.0);
+
+            ui.label(
+                RichText::new("GENERATED PRACTICE TEXT")
+                    .color(theme.accent)
+                    .strong()
+                    .monospace()
+                    .size(12.0),
+            );
+            ui.add_space(6.0);
+
+            let frame = egui::Frame::none()
+                .fill(theme.bg_surface)
+                .stroke(Stroke::new(1.0, theme.border))
+                .rounding(10.0)
+                .inner_margin(egui::Margin::same(pad));
+
+            frame.show(ui, |ui| {
+                ui.set_min_width(inner_w);
+                ui.set_max_width(inner_w);
+
+                UnifiedToggle::row(
+                    ui,
+                    &mut config.include_punctuation,
+                    "Include Punctuation",
+                    "Add punctuation marks (. , ; ! ? : -) to non-passage generated drills",
+                    theme,
+                );
+
+                ui.add_space(6.0);
+                ui.separator();
+                ui.add_space(6.0);
+
+                UnifiedToggle::row(
+                    ui,
+                    &mut config.include_numbers,
+                    "Include Numbers",
+                    "Mix numeric tokens into non-passage generated drills",
                     theme,
                 );
             });

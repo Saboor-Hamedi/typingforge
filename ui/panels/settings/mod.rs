@@ -50,8 +50,9 @@ impl Default for SettingsPanel {
 impl SettingsPanel {
     pub fn new() -> Self {
         let panel = Self::default();
-        // Silently check for updates in background on startup (like VS Code)
-        panel.updater.check_for_updates(true);
+        // Silently check for updates in background on startup (like VS Code).
+        // Never auto-download; the user must opt in by clicking the update button.
+        panel.updater.check_for_updates(false);
         panel
     }
 
@@ -65,6 +66,7 @@ impl SettingsPanel {
         current_user: &mut Option<User>,
         passage_to_load: &mut Option<CustomPassageRequest>,
         _is_open: &mut bool,
+        sessions_version: u64,
     ) {
         let total_h = ui.available_height();
 
@@ -145,6 +147,7 @@ impl SettingsPanel {
                                                         theme,
                                                         db,
                                                         current_user,
+                                                        sessions_version,
                                                     );
                                                 }
                                                 SettingsTab::CustomTexts => {

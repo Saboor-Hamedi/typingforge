@@ -86,7 +86,7 @@ impl HeaderWidget {
 
             // 2. CENTER: Mode Switcher (Visible in Typing screen)
             if screen == HeaderScreen::Typing {
-                let nav_w = 230.0;
+                let nav_w = 330.0;
                 let nav_rect = Rect::from_center_size(Pos2::new(bar_rect.center().x, center_y), Vec2::new(nav_w, 22.0));
 
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(nav_rect), |ui| {
@@ -99,6 +99,7 @@ impl HeaderWidget {
                             };
                             let (tab_rect, tab_resp) = ui.allocate_exact_size(Vec2::new(42.0, 20.0), egui::Sense::click());
                             tab_resp.surrender_focus();
+                            tab_resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, text));
                             let p = ui.painter_at(tab_rect);
                             let col = if selected {
                                 theme.accent
@@ -129,7 +130,7 @@ impl HeaderWidget {
                         ui.add_space(8.0);
 
                         if *current_mode == GameMode::Timed {
-                            for dur in [TimedDuration::Sec25, TimedDuration::Sec40] {
+                            for dur in [TimedDuration::Sec25, TimedDuration::Sec40, TimedDuration::Sec60] {
                                 let label = format!("{}", dur as usize);
                                 let selected = *timed_duration == dur;
                                 let (dur_rect, dur_resp) = ui.allocate_exact_size(Vec2::new(28.0, 20.0), egui::Sense::click());
@@ -157,7 +158,7 @@ impl HeaderWidget {
                                 }
                             }
                         } else {
-                            for target in [WordCountTarget::Words25, WordCountTarget::Words40] {
+                            for target in [WordCountTarget::Words25, WordCountTarget::Words40, WordCountTarget::Words120] {
                                 let label = format!("{}", target as usize);
                                 let selected = *word_target == target;
                                 let (target_rect, target_resp) = ui.allocate_exact_size(Vec2::new(28.0, 20.0), egui::Sense::click());
@@ -208,9 +209,13 @@ impl HeaderWidget {
                     Pos2::new(bar_rect.max.x - win_ctrl_w * 2.0, bar_rect.max.y),
                 );
 
-                let close_resp = ui.interact(close_rect, ui.id().with("hdr_btn_close"), egui::Sense::click());
-                let max_resp = ui.interact(max_rect, ui.id().with("hdr_btn_max"), egui::Sense::click());
-                let min_resp = ui.interact(min_rect, ui.id().with("hdr_btn_min"), egui::Sense::click());
+                let close_resp = ui.interact(close_rect, ui.id().with("hdr_btn_close"), egui::Sense::click()).on_hover_text("Close");
+                let max_resp = ui.interact(max_rect, ui.id().with("hdr_btn_max"), egui::Sense::click()).on_hover_text("Maximize / Restore");
+                let min_resp = ui.interact(min_rect, ui.id().with("hdr_btn_min"), egui::Sense::click()).on_hover_text("Minimize");
+
+                close_resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Close window"));
+                max_resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Maximize or restore window"));
+                min_resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Minimize window"));
 
                 let is_max = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
                 let close_rounding = if is_max {

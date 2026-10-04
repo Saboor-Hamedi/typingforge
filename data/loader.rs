@@ -4,7 +4,6 @@ use crate::fx::CaretStyle;
 use crate::game::{GameMode, TimedDuration, WordCountTarget};
 use crate::ui::ThemeId;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Runtime application configuration state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -18,6 +17,9 @@ pub struct AppConfig {
     pub caret_glow: f32,
     pub particles_enabled: bool,
     pub screen_shake_enabled: bool,
+    /// Minimal-motion mode: disables particles, screen shake and kinetic caret motion.
+    #[serde(default)]
+    pub reduced_motion: bool,
     pub sound_enabled: bool,
     pub sound_volume: f32,
     pub sound_preset: SoundPreset,
@@ -27,8 +29,12 @@ pub struct AppConfig {
     pub default_mode: GameMode,
     pub default_duration: TimedDuration,
     pub default_word_count: WordCountTarget,
+    /// Include punctuation marks in generated practice text.
     #[serde(default)]
-    pub high_scores: HashMap<String, f32>,
+    pub include_punctuation: bool,
+    /// Include numeric tokens in generated practice text.
+    #[serde(default)]
+    pub include_numbers: bool,
     pub persist_guest_sessions: bool,
     pub active_user_id: Option<i64>,
 }
@@ -44,6 +50,7 @@ impl Default for AppConfig {
             caret_glow: 0.65,
             particles_enabled: true,
             screen_shake_enabled: false,
+            reduced_motion: false,
             sound_enabled: true,
             sound_volume: 0.5,
             sound_preset: SoundPreset::Mechanical,
@@ -53,7 +60,8 @@ impl Default for AppConfig {
             default_mode: GameMode::Timed,
             default_duration: TimedDuration::Sec25,
             default_word_count: WordCountTarget::Words25,
-            high_scores: HashMap::new(),
+            include_punctuation: false,
+            include_numbers: false,
             persist_guest_sessions: false,
             active_user_id: None,
         }
@@ -82,9 +90,6 @@ pub struct SettingsFile {
     pub gameplay: GameplaySettings,
     /// User profile and session authentication state.
     pub account: AccountSettings,
-    /// Cached high scores map by mode key.
-    #[serde(default)]
-    pub high_scores: HashMap<String, f32>,
 }
 
 /// Theme preferences and color specifications.
@@ -128,6 +133,9 @@ pub struct VisualSettings {
     pub particles_enabled: bool,
     /// Toggles dynamic screen shake on errors or typing bursts.
     pub screen_shake_enabled: bool,
+    /// Minimal-motion mode.
+    #[serde(default)]
+    pub reduced_motion: bool,
     /// Toggles live real-time WPM readout counter.
     pub show_live_wpm: bool,
     /// Toggles the interactive velocity telemetry graph.
@@ -152,10 +160,16 @@ pub struct GameplaySettings {
     pub default_mode: GameMode,
     /// Target duration for timed sessions (25s or 40s).
     pub default_duration: TimedDuration,
-    /// Target word count for word sessions (25w or 40w).
+    /// Target word count for word sessions (25w, 40w, or 120w).
     pub default_word_count: WordCountTarget,
     /// Whether to record anonymous guest sessions into SQLite database history.
     pub persist_guest_sessions: bool,
+    /// Include punctuation in generated practice text.
+    #[serde(default)]
+    pub include_punctuation: bool,
+    /// Include numbers in generated practice text.
+    #[serde(default)]
+    pub include_numbers: bool,
 }
 
 /// User profile linkage.
@@ -194,6 +208,7 @@ impl From<&AppConfig> for SettingsFile {
             visuals: VisualSettings {
                 particles_enabled: c.particles_enabled,
                 screen_shake_enabled: c.screen_shake_enabled,
+                reduced_motion: c.reduced_motion,
                 show_live_wpm: c.show_live_wpm,
                 show_velocity_graph: c.show_velocity_graph,
             },
@@ -207,11 +222,12 @@ impl From<&AppConfig> for SettingsFile {
                 default_duration: c.default_duration,
                 default_word_count: c.default_word_count,
                 persist_guest_sessions: c.persist_guest_sessions,
+                include_punctuation: c.include_punctuation,
+                include_numbers: c.include_numbers,
             },
             account: AccountSettings {
                 active_user_id: c.active_user_id,
             },
-            high_scores: c.high_scores.clone(),
         }
     }
 }
@@ -227,6 +243,7 @@ impl From<SettingsFile> for AppConfig {
             caret_glow: s.caret.glow_intensity,
             particles_enabled: s.visuals.particles_enabled,
             screen_shake_enabled: s.visuals.screen_shake_enabled,
+            reduced_motion: s.visuals.reduced_motion,
             sound_enabled: s.audio.sound_enabled,
             sound_volume: s.audio.sound_volume,
             sound_preset: s.audio.sound_preset,
@@ -236,7 +253,8 @@ impl From<SettingsFile> for AppConfig {
             default_mode: s.gameplay.default_mode,
             default_duration: s.gameplay.default_duration,
             default_word_count: s.gameplay.default_word_count,
-            high_scores: s.high_scores,
+            include_punctuation: s.gameplay.include_punctuation,
+            include_numbers: s.gameplay.include_numbers,
             persist_guest_sessions: s.gameplay.persist_guest_sessions,
             active_user_id: s.account.active_user_id,
         }

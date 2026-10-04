@@ -220,7 +220,9 @@ impl TypingImport {
 
         let _ = de.deserialize_map(visitor).map_err(|e| {
             let msg = e.to_string();
-            if msg.contains("Invalid file format") {
+            if msg.contains("cancelled by user") {
+                "Import cancelled by user.".to_string()
+            } else if msg.contains("Invalid file format") {
                 "Invalid file format.".to_string()
             } else {
                 format!("JSON parse error: {msg}")
